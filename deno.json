@@ -1,0 +1,27 @@
+{
+  "workspace": [
+    "./cache",
+    "./core",
+    "./db",
+    "./files",
+    "./kit",
+    "./storage"
+  ],
+  "tasks": {
+    "check"       : "deno check */*.js",
+    "lint"        : "deno lint",
+    "fmt"         : "deno fmt",
+    "publish:dry" : "deno publish --dry-run"
+  },
+  "fmt": {
+    "useTabs": false,
+    "lineWidth": 100,
+    "singleQuote": true,
+    "semiColons": true
+  },
+  "lint": {
+    "rules": {
+      "exclude": ["no-unused-vars"]
+    }
+  }
+}

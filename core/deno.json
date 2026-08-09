@@ -1,0 +1,20 @@
+{
+  "name": "@bunker/core",
+  "version": "0.1.0",
+  "license": "MIT",
+  "exports": {
+    "."        : "./index.js",
+    "./driver" : "./driver.js",
+    "./keys"   : "./keys.js",
+    "./quota"  : "./quota.js",
+    "./sync"   : "./sync.js"
+  },
+  "publish": {
+    "include": [
+      "*.js",
+      "index.d.ts",
+      "readme.md",
+      "LICENSE"
+    ]
+  }
+}
