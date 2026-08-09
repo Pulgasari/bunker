@@ -2,7 +2,11 @@
 // @ts-self-types="./index.d.ts"
 
 import {
-  NO_KEYSPACE, createKeyspace, createMemoryDriver, createSingleFlight, withKeyspace,
+  NO_KEYSPACE, 
+  createKeyspace, 
+  createMemoryDriver, 
+  createSingleFlight, 
+  withKeyspace,
 } from '@bunker/core';
 
 // :::::: ENTRIES ::::::::::::::::::::::::::::::::::::::::::::::::
