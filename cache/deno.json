@@ -1,0 +1,17 @@
+{
+  "name": "@bunker/cache",
+  "version": "0.1.0",
+  "license": "MIT",
+  "exports": "./index.js",
+  "imports": {
+    "@bunker/core": "jsr:@bunker/core@^0.1.0"
+  },
+  "publish": {
+    "include": [
+      "index.js",
+      "index.d.ts",
+      "readme.md",
+      "LICENSE"
+    ]
+  }
+}
