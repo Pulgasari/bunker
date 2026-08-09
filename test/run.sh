@@ -8,6 +8,8 @@ node test/core.test.mjs
 node test/storage.test.mjs
 node test/db.test.mjs
 node test/cache.test.mjs
+node test/files.test.mjs
+node test/kit.test.mjs
 EXPECT_PERSISTENT=1 node --experimental-webstorage \
   --localstorage-file="${TMPDIR:-/tmp}/bunker-test-localstorage" \
   test/storage.test.mjs 2>/dev/null

@@ -21,7 +21,6 @@
     "index.d.ts",
     "readme.md"
   ],
-  "sideEffects": false,
   "license": "MIT",
   "repository": {
     "type": "git",
