@@ -1,0 +1,26 @@
+{
+  "name"        : "@bunker/storage",
+  "version"     : "0.1.0",
+  "description" : "Synchronous localStorage and sessionStorage with namespacing, codecs and a silent memory fallback.",
+  "type"        : "module",
+  "main"        : "./index.js",
+  "module"      : "./index.js",
+  "types"       : "./index.d.ts",
+  "exports": {
+    ".": "./index.js"
+  },
+  "dependencies": {
+    "@bunker/core": "workspace:*"
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "readme.md"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pulgasari/bunker.git",
+    "directory": "storage"
+  }
+}
