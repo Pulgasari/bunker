@@ -5,8 +5,7 @@
 // in every *other* tab of the origin. neither delivers to the sender, so both
 // behave the same way from the caller's side.
 
-const FALLBACK_PREFIX = '__bunker_sync__' + ':';
-
+const FALLBACK_PREFIX     = '__bunker_sync__' + ':';
 const hasBroadcastChannel = () => typeof globalThis.BroadcastChannel === 'function';
 
 const localStore = () => {
@@ -16,18 +15,17 @@ const localStore = () => {
 
 export function createChannel (name) {
   const listeners = new Set;
-  const emit      = (message) => { for (const listener of listeners) listener(message); };
-
-  const subscribe = (listener) => { listeners.add(listener); return () => listeners.delete(listener); };
+  const emit      = message  => { for (const listener of listeners) listener(message); };
+  const subscribe = listener => { listeners.add(listener); return () => listeners.delete(listener); };
 
   if (hasBroadcastChannel()) {
     const channel = new BroadcastChannel(name);
-    channel.onmessage = (event) => emit(event.data);
+    channel.onmessage = event => emit(event.data);
 
     return {
       transport : 'broadcast-channel',
       close     : () => { listeners.clear(); channel.close(); },
-      post      : (message) => channel.postMessage(message),
+      post      : message => channel.postMessage(message),
       subscribe,
     };
   }
