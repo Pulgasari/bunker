@@ -1,0 +1,31 @@
+{
+  "name"        : "@bunker/kit",
+  "version"     : "0.1.0",
+  "description" : "Every bunker package, pre-wired: cache with an IndexedDB L2, namespaced storage and files.",
+  "type"        : "module",
+  "main"        : "./index.js",
+  "module"      : "./index.js",
+  "types"       : "./index.d.ts",
+  "exports": {
+    ".": "./index.js"
+  },
+  "dependencies": {
+    "@bunker/cache"   : "workspace:*",
+    "@bunker/core"    : "workspace:*",
+    "@bunker/db"      : "workspace:*",
+    "@bunker/files"   : "workspace:*",
+    "@bunker/storage" : "workspace:*"
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "readme.md"
+  ],
+  "sideEffects": false,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pulgasari/bunker.git",
+    "directory": "kit"
+  }
+}

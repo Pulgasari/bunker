@@ -1,0 +1,20 @@
+{
+  "name"        : "bunker",
+  "version"     : "0.1.0",
+  "description" : "Browser storage, split along the lines the platform actually draws.",
+  "type"        : "module",
+  "private"     : true,
+  "workspaces": [
+    "cache",
+    "core",
+    "db",
+    "files",
+    "kit",
+    "storage"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pulgasari/bunker.git"
+  }
+}

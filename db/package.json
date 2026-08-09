@@ -1,0 +1,27 @@
+{
+  "name"        : "@bunker/db",
+  "version"     : "0.1.0",
+  "description" : "IndexedDB with proxy tables, serialized upgrades and no version inflation.",
+  "type"        : "module",
+  "main"        : "./index.js",
+  "module"      : "./index.js",
+  "types"       : "./index.d.ts",
+  "exports": {
+    ".": "./index.js"
+  },
+  "dependencies": {
+    "@bunker/core": "workspace:*"
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "readme.md"
+  ],
+  "sideEffects": false,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pulgasari/bunker.git",
+    "directory": "db"
+  }
+}
