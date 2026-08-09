@@ -1,9 +1,9 @@
 {
-  "name"        : "bunker",
-  "version"     : "0.1.0",
-  "description" : "Browser storage, split along the lines the platform actually draws.",
-  "type"        : "module",
-  "private"     : true,
+  "name": "bunker",
+  "version": "0.1.0",
+  "description": "Browser storage, split along the lines the platform actually draws.",
+  "type": "module",
+  "private": true,
   "workspaces": [
     "cache",
     "core",
@@ -16,5 +16,8 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/pulgasari/bunker.git"
+  },
+  "devDependencies": {
+    "fake-indexeddb": "^6.2.5"
   }
 }
