@@ -18,9 +18,8 @@ const STAMP           = 'x-bunker-at';
 const SOURCE_ETAG     = 'x-bunker-source-etag';
 const SOURCE_MODIFIED = 'x-bunker-source-modified';
 
-const isSupported = () => typeof caches !== 'undefined';
-
-const urlOf = (request) => typeof request === 'string' ? request : request.url;
+const isSupported = ()        => typeof caches !== 'undefined';
+const urlOf       = (request) => typeof request === 'string' ? request : request.url;
 
 // a stored response carries our stamp plus whatever validators the source had
 function stamp (response, body, { at = Date.now(), etag = null, modified = null, type = null } = {}) {
@@ -43,10 +42,8 @@ const ageOf = (response) => {
 
 export function createFiles (options = {}) {
   const { name = 'bunker', onError = null } = options;
-
   const once = createSingleFlight();
   const fail = (operation, key, error) => { onError?.({ error, key, operation }); };
-
   let opened = null;
 
   function open () {
@@ -55,42 +52,38 @@ export function createFiles (options = {}) {
   }
 
   async function match (request) {
-    const cache = await open();
-    if (!cache) return null;
-    try   { return (await cache.match(request)) ?? null; }
-    catch (error) { fail('match', urlOf(request), error); return null; }
+    const cache = await open(); if (!cache) return null;
+    try       { return (await cache.match(request)) ?? null; }
+    catch (e) { fail('match', urlOf(request), e); return null; }
   }
 
   async function put (request, response) {
-    const cache = await open();
-    if (!cache) return false;
+    const cache = await open(); if (!cache) return false;
 
     // an opaque response has status 0 and cache.put() rejects on it outright
     if (response.type === 'opaque' || response.status === 0) return false;
 
-    try   { await cache.put(request, response); return true; }
-    catch (error) { fail('put', urlOf(request), error); return false; }
+    try       { await cache.put(request, response); return true; }
+    catch (e) { fail('put', urlOf(request), e); return false; }
   }
 
   async function remove (request) {
-    const cache = await open();
-    if (!cache) return false;
-    try   { return await cache.delete(request); }
-    catch (error) { fail('delete', urlOf(request), error); return false; }
+    const cache = await open(); if (!cache) return false;
+    try       { return await cache.delete(request); }
+    catch (e) { fail('delete', urlOf(request), e); return false; }
   }
 
   async function keys () {
-    const cache = await open();
-    if (!cache) return [];
-    try   { return await cache.keys(); }
-    catch (error) { fail('keys', null, error); return []; }
+    const cache = await open(); if (!cache) return [];
+    try       { return await cache.keys(); }
+    catch (e) { fail('keys', null, e); return []; }
   }
 
   async function clear () {
     if (!isSupported()) return false;
     opened = null;
-    try   { return await caches.delete(name); }
-    catch (error) { fail('clear', name, error); return false; }
+    try       { return await caches.delete(name); }
+    catch (e) { fail('clear', name, e); return false; }
   }
 
   // :::::: fetch + transform + store
@@ -192,12 +185,11 @@ export function createFiles (options = {}) {
     const toUrl = (key) => new URL(encodeURIComponent(key), origin).href;
 
     return {
-      name : `cache-api:${name}`,
-      sync : false,
-
-      clear  : ()            => clear(),
-      delete : (key)         => remove(toUrl(key)).then(() => undefined),
-      set    : (key, value)  => put(toUrl(key), new Response(JSON.stringify(value))).then(() => undefined),
+      name   : `cache-api:${name}`,
+      sync   : false,
+      clear  : ()           => clear(),
+      delete : (key)        => remove(toUrl(key)).then(() => undefined),
+      set    : (key, value) => put(toUrl(key), new Response(JSON.stringify(value))).then(() => undefined),
 
       async get (key) {
         const response = await match(toUrl(key));
