@@ -18,21 +18,24 @@ import {
   the two windows are separate on purpose: ttl is how long the value is trusted,
   staleTtl is how long it may still be handed out while a fresh one is fetched.
 */
-const FRESH = 'fresh', STALE = 'stale', DEAD = 'dead', MISS = 'miss';
+const 
+FRESH = 'fresh', 
+STALE = 'stale', 
+DEAD  = 'dead',
+MISS  = 'miss';
 
 function createEntry (value, ttl, staleTtl, now) {
   const expire = ttl ? now + ttl : null;
   return {
     at         : now,
-    expire,
     staleUntil : expire && staleTtl ? expire + staleTtl : expire,
-    value,
+    expire, value,
   };
 }
 
 function stateOf (entry, now) {
   if (!entry) return MISS;
-  if (!entry.expire || entry.expire > now) return FRESH;
+  if (!entry.expire    || entry.expire     > now) return FRESH;
   if (entry.staleUntil && entry.staleUntil > now) return STALE;
   return DEAD;
 }
@@ -55,21 +58,17 @@ export function createCache (options = {}) {
   const store    = withKeyspace(driver, keyspace);
   const memory   = new Map;         // l1. insertion order doubles as lru order.
   const once     = createSingleFlight();
+  const now      = () => Date.now();
+  const fail     = (operation, key, error) => { onError?.({ error, key, operation }); };
 
-  const now  = () => Date.now();
-  const fail = (operation, key, error) => { onError?.({ error, key, operation }); };
-
-  // l2 must never take the caller down with it: a cache write that fails is a cache
-  // miss later, not an exception now. the old AufbauCache rejected here, which turned
-  // every fire-and-forget set() into an unhandled rejection.
   const writeThrough = async (key, entry) => {
-    try { await store.set(key, entry); }
-    catch (error) { fail('set', key, error); }
+    try       { await store.set(key, entry); }
+    catch (e) { fail('set', key, e); }
   };
 
   const dropThrough = async (key) => {
-    try { await store.delete(key); }
-    catch (error) { fail('delete', key, error); }
+    try       { await store.delete(key); }
+    catch (e) { fail('delete', key, e); }
   };
 
   /*
@@ -91,8 +90,8 @@ export function createCache (options = {}) {
     if (cached) { remember(key, cached); return cached; }
 
     let entry = null;
-    try { entry = await store.get(key); }
-    catch (error) { fail('get', key, error); return null; }
+    try       { entry = await store.get(key); }
+    catch (e) { fail('get', key, e); return null; }
 
     // an l2 written by an older version of the code may not look like an entry
     if (!entry || typeof entry !== 'object' || !('value' in entry)) return null;
@@ -117,7 +116,7 @@ export function createCache (options = {}) {
 
   async function get (key, { allowStale = false } = {}) {
     const found = await entry(key);
-    if (found.state === FRESH) return found.value;
+    if (found.state === FRESH)               return found.value;
     if (found.state === STALE && allowStale) return found.value;
     return null;
   }
@@ -149,8 +148,8 @@ export function createCache (options = {}) {
   }
 
   async function keys (prefix = '') {
-    try { return await store.keys(prefix); }
-    catch (error) { fail('keys', prefix, error); return [...memory.keys()].filter(key => key.startsWith(prefix)); }
+    try       { return await store.keys(prefix); }
+    catch (e) { fail('keys', prefix, e); return [...memory.keys()].filter(key => key.startsWith(prefix)); }
   }
 
   /*
@@ -163,9 +162,8 @@ export function createCache (options = {}) {
     the old implementation returned 0 in that case despite having emptied l1.
   */
   async function prune (prefix = '') {
-    const stamp = now();
-    // a key living in both layers must count once, not twice
-    const removed = new Set;
+    const stamp   = now();
+    const removed = new Set; // a key living in both layers must count once, not twice
 
     for (const [key, cached] of memory) {
       if (key.startsWith(prefix) && stateOf(cached, stamp) === DEAD) { memory.delete(key); removed.add(key); }
@@ -175,8 +173,8 @@ export function createCache (options = {}) {
 
     for (const key of await keys(prefix)) {
       let stored = null;
-      try { stored = await store.get(key); }
-      catch (error) { fail('get', key, error); continue; }
+      try       { stored = await store.get(key); }
+      catch (e) { fail('get', key, e); continue; }
 
       if (stateOf(stored, stamp) === DEAD) {
         memory.delete(key);
@@ -238,13 +236,11 @@ export function createCache (options = {}) {
   }
 
   return {
-    name : `cache(${store.name ?? 'driver'})`,
-
-    driver : store, keyspace,
-    get size () { return memory.size; },
-
-    clear, entry, get, has, keys, prune, set, swr,
     delete : remove,
+    driver : store, keyspace,
+    name   : `cache(${store.name ?? 'driver'})`,
+    clear, entry, get, has, keys, prune, set, swr,
+    get size () { return memory.size; },
   };
 }
 
