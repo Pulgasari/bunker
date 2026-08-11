@@ -21,12 +21,11 @@ function createMemoryArea (area) {
 
   return {
     persistent : false,
-
-    get length ()      { return map.size; },
-    key        : (i)   => [...map.keys()][i] ?? null,
-    getItem    : (key) => map.has(key) ? map.get(key) : null,
+    key        : (i)          => [...map.keys()][i] ?? null,
+    getItem    : (key)        => map.has(key) ? map.get(key) : null,
     setItem    : (key, value) => { map.set(key, String(value)); },
-    removeItem : (key) => { map.delete(key); },
+    removeItem : (key)        => { map.delete(key); },
+    get length () { return map.size; },
   };
 }
 
@@ -42,18 +41,16 @@ function resolveArea (area) {
 
     return {
       persistent : true,
-
-      get length ()      { return native.length; },
-      key        : (i)   => native.key(i),
-      getItem    : (key) => native.getItem(key),
+      key        : (i)          => native.key(i),
+      getItem    : (key)        => native.getItem(key),
       setItem    : (key, value) => native.setItem(key, value),
-      removeItem : (key) => native.removeItem(key),
+      removeItem : (key)        => native.removeItem(key),
+      get length () { return native.length; },
     };
-  } catch {
-    // private mode, a blocked cookie policy, or a full disk. persistence is gone,
-    // the app is not: fall through to memory and keep every call working.
-    return createMemoryArea(area);
-  }
+  } 
+  // private mode, a blocked cookie policy, or a full disk. persistence is gone,
+  // the app is not: fall through to memory and keep every call working.
+  catch { return createMemoryArea(area); }
 }
 
 // :::::: STORAGE ::::::::::::::::::::::::::::::::::::::::::::::::
@@ -67,13 +64,11 @@ export function createStorage (options = {}) {
     onError   = null,
   } = options;
 
-  const backing  = resolveArea(area);
-  const keyspace = namespace ? createKeyspace({ namespace, version }) : NO_KEYSPACE;
+  const backing   = resolveArea(area);
+  const keyspace  = namespace ? createKeyspace({ namespace, version }) : NO_KEYSPACE;
   const listeners = new Set;
-
-  const fail = (operation, key, error) => { onError?.({ error, key, operation }); };
-
-  const emit = (change) => { for (const listener of listeners) listener(change); };
+  const fail      = (operation, key, error) => { onError?.({ error, key, operation }); };
+  const emit      = (change)                => { for (const listener of listeners) listener(change); };
 
   // the native storage event fires in every *other* tab of the origin, and only
   // for localStorage. our own writes are emitted separately, so a single subscribe()
@@ -109,12 +104,10 @@ export function createStorage (options = {}) {
       backing.setItem(keyspace.encode(key), codec.encode(value));
       emit({ key, source: 'local', value });
       return true;
-    } catch (error) {
-      // most often QuotaExceededError. the caller gets a false and decides;
-      // a store write is never worth taking the page down for.
-      fail('set', key, error);
-      return false;
-    }
+    } 
+    // most often QuotaExceededError. the caller gets a false and decides;
+    // a store write is never worth taking the page down for.
+    catch (error) { fail('set', key, error); return false; }
   }
 
   function deleteSync (key) {
@@ -161,12 +154,12 @@ export function createStorage (options = {}) {
         const full = backing.key(index);
         if (full !== null && keyspace.stale(full)) doomed.push(full);
       }
-    } catch (error) {
-      fail('sweep', null, error);
     }
+    catch (error) { fail('sweep', null, error); }
 
     for (const full of doomed) {
-      try { backing.removeItem(full); } catch (error) { fail('sweep', full, error); }
+      try       { backing.removeItem(full); } 
+      catch (e) { fail('sweep', full, e); }
     }
     return doomed.length;
   }
@@ -174,7 +167,6 @@ export function createStorage (options = {}) {
   const storage = {
     name : `storage:${area}`,
     sync : true,
-
     area, codec, keyspace,
     get persistent () { return backing.persistent; },
 
@@ -184,8 +176,8 @@ export function createStorage (options = {}) {
     // note: a stored `null` is indistinguishable from an absent key on read,
     // hasSync() is the way to tell them apart.
     hasSync (key) {
-      try   { return backing.getItem(keyspace.encode(key)) !== null; }
-      catch (error) { fail('has', key, error); return false; }
+      try       { return backing.getItem(keyspace.encode(key)) !== null; }
+      catch (e) { fail('has', key, e); return false; }
     },
 
     // driver contract, so @bunker/cache and friends can take this as a backend
@@ -220,11 +212,11 @@ export function createStorage (options = {}) {
 // otherwise be shadowed by the method of the same name.
 export function createProxy (storage) {
   return new Proxy(Object.create(null), {
-    get            : (_, key) => typeof key === 'symbol' ? undefined : storage.getSync(key),
+    get            : (_, key)        => typeof key === 'symbol' ? undefined : storage.getSync(key),
     set            : (_, key, value) => { storage.setSync(key, value); return true; },
-    has            : (_, key) => typeof key !== 'symbol' && storage.hasSync(key),
-    deleteProperty : (_, key) => { storage.deleteSync(key); return true; },
-    ownKeys        : ()   => storage.keysSync(),
+    has            : (_, key)        => typeof key !== 'symbol' && storage.hasSync(key),
+    deleteProperty : (_, key)        => { storage.deleteSync(key); return true; },
+    ownKeys        : ()              => storage.keysSync(),
     getOwnPropertyDescriptor : (_, key) =>
       storage.hasSync(key) ? { configurable: true, enumerable: true, value: storage.getSync(key) } : undefined,
   });
@@ -232,7 +224,8 @@ export function createProxy (storage) {
 
 // :::::: DEFAULTS :::::::::::::::::::::::::::::::::::::::::::::::
 
-export const local   = createStorage({ area: 'local'   });
-export const session = createStorage({ area: 'session' });
+export const 
+local   = createStorage({ area: 'local'   }),
+session = createStorage({ area: 'session' });
 
 export default local;
