@@ -43,10 +43,9 @@ export class BunkerDB {
     });
   }
 
-  get name () { return this.#dbName; }
-  get tables () { return [...this.#tables]; }
-  // null until the first connection. every schema change bumps it by one.
-  get version () { return this.#db?.version ?? null; }
+  get name    () { return this.#dbName; }
+  get tables  () { return [...this.#tables]; }
+  get version () { return this.#db?.version ?? null; } // null until the first connection. every schema change bumps it by one.
 
   // :::::: CONNECTION ::::::::::::::::::::::::::::::::::::::::::
 
@@ -77,9 +76,9 @@ export class BunkerDB {
       const rq = version ? indexedDB.open(this.#dbName, version) : indexedDB.open(this.#dbName);
 
       rq.onupgradeneeded = (event) => upgrade?.(event.target.result, rq.transaction);
-      rq.onsuccess       = () => resolve(this.#db = this.#syncTables(rq.result));
-      rq.onerror         = () => reject(rq.error);
-      rq.onblocked       = () => reject(new Error(`[bunker] "${this.#dbName}": upgrade blocked by another connection`));
+      rq.onsuccess       = ()      => resolve(this.#db = this.#syncTables(rq.result));
+      rq.onerror         = ()      => reject(rq.error);
+      rq.onblocked       = ()      => reject(new Error(`[bunker] "${this.#dbName}": upgrade blocked by another connection`));
     });
   }
 
@@ -124,15 +123,14 @@ export class BunkerDB {
     const db = await this.#getDB(table);
 
     return new Promise((resolve, reject) => {
-      const tx = db.transaction(table, mode);
-
-      let value   = undefined;
-      const collect = (result) => { value = result; };
+      let   value   = undefined;
+      const tx      = db.transaction(table, mode);
+      const collect = result => value = result;
 
       const rq = callback(tx.objectStore(table), collect, reject);
       if (rq instanceof IDBRequest) {
-        rq.onsuccess = () => collect(rq.result);
-        rq.onerror   = () => reject(rq.error);
+        rq.onsuccess = () => collect (rq.result);
+        rq.onerror   = () => reject  (rq.error);
       }
 
       tx.oncomplete = () => resolve(value);
@@ -263,9 +261,8 @@ export class BunkerDB {
   // without ever importing @bunker/db.
   driver (table = 'kv') {
     return {
-      name : `indexeddb:${this.#dbName}/${table}`,
-      sync : false,
-
+      name   : `indexeddb:${this.#dbName}/${table}`,
+      sync   : false,
       clear  : ()            => this.clear(table),
       delete : (key)         => this.delete(table, key),
       get    : (key)         => this.get(table, key),
