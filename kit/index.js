@@ -7,11 +7,19 @@
   knowledge about indexeddb, localStorage or the cache api.
 */
 
+/*
 import * as core          from '@bunker/core';
 import { createCache }    from '@bunker/cache';
 import { createDb }       from '@bunker/db';
 import { createFiles }    from '@bunker/files';
 import { createStorage }  from '@bunker/storage';
+*/
+
+import * as core          from './../core/index.js';
+import { createCache }    from './../cache/index.js';
+import { createDb }       from './../db/index.js';
+import { createFiles }    from './../files/index.js';
+import { createStorage }  from './../storage/index.js';
 
 export function createBunker (options = {}) {
   const {
