@@ -7,7 +7,7 @@ import {
   createMemoryDriver, 
   createSingleFlight, 
   withKeyspace,
-} from '@bunker/core';
+} from './../core/index.js'; // from '@bunker/core';
 
 // :::::: ENTRIES ::::::::::::::::::::::::::::::::::::::::::::::::
 
