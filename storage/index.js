@@ -1,7 +1,7 @@
 // @bunker/storage
 // @ts-self-types="./index.d.ts"
 
-import { NO_KEYSPACE, codecs, createKeyspace } from '@bunker/core';
+import { NO_KEYSPACE, codecs, createKeyspace } from './../core/index.js'; // from '@bunker/core';
 
 const PROBE = '__bunker_probe__';
 
