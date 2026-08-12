@@ -14,5 +14,5 @@ export {
 
 export { NO_KEYSPACE, SEPARATOR, codecs, createKeyspace } from './keys.js';
 
-export * as quota from './quota.js';
+export * as quota        from './quota.js';
 export { createChannel } from './sync.js';
