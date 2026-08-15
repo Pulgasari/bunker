@@ -1,6 +1,6 @@
 # memo.js
 
-​## 1. lazy(factory)
+## 1. lazy(factory)
 
 - ​Zweck: Verzögerte Ausführung (Lazy Evaluation) und Speicherung eines Werts.
 ​Funktionsweise: Eine aufwendige Initialisierung (factory) wird erst ausgeführt, wenn das zurückgelieferte resolve zum ersten Mal aufgerufen wird.
