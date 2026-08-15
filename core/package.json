@@ -1,7 +1,7 @@
 {
   "name"        : "@bunker/core",
   "version"     : "0.1.0",
-  "description" : "Driver contract, keyspaces, quota and cross-tab primitives shared by every bunker package.",
+  "description" : "The driver contract and keyspaces every bunker backend implements.",
   "type"        : "module",
   "main"        : "./index.js",
   "module"      : "./index.js",
@@ -9,9 +9,7 @@
   "exports": {
     "."        : "./index.js",
     "./driver" : "./driver.js",
-    "./keys"   : "./keys.js",
-    "./quota"  : "./quota.js",
-    "./sync"   : "./sync.js"
+    "./keys"   : "./keys.js"
   },
   "files": [
     "*.js",

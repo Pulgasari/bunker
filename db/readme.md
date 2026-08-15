@@ -68,10 +68,10 @@ abort still undoes.
 ## As a cache backend
 
 ```javascript
-import { createCache } from '@bunker/cache';
+import { createPolicy } from '@bunker/policy';
 
-const cache = createCache({ driver: db.driver('kv') });
+const cache = createPolicy({ driver: db.driver('kv') });
 ```
 
-`driver(table)` hands back a plain `@bunker/core` driver, which is how `@bunker/cache`
+`driver(table)` hands back a plain `@bunker/core` driver, which is how `@bunker/policy`
 gets an IndexedDB L2 without ever importing this package.

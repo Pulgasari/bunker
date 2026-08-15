@@ -90,7 +90,7 @@ export declare class BunkerDB {
   toggle(table: string, key: IDBValidKey): Promise<boolean>;
 
   /**
-   * A `@bunker/core` driver over a single table, so `@bunker/cache` can use this as
+   * A `@bunker/core` driver over a single table, so `@bunker/policy` can use this as
    * an L2 without importing `@bunker/db` itself.
    */
   driver(table?: string): Driver;

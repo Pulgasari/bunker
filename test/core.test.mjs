@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {
-  assertDriver, codecs, createChannel, createKeyspace, createMemoryDriver,
-  createSingleFlight, isDriver, isSyncDriver, quota, withKeyspace,
+  assertDriver, codecs, createKeyspace, createMemoryDriver,
+  isDriver, isSyncDriver, withKeyspace,
 } from '@bunker/core';
 
 // :::::: keyspace
@@ -56,30 +56,7 @@ assert.equal(await other.get('theme'), 'classic', 'foreign namespace survived cl
 
 assert.equal(withKeyspace(backing), backing, 'NO_KEYSPACE must not wrap');
 
-// :::::: single flight
-const once = createSingleFlight();
-let calls  = 0;
-const slow = () => new Promise(resolve => setTimeout(() => { calls++; resolve('v'); }, 10));
-const [a, b] = await Promise.all([once('k', slow), once('k', slow)]);
-assert.equal(calls, 1, 'concurrent misses must collapse');
-assert.equal(a, b);
-assert.equal(once.size(), 0, 'entry must be released after settle');
-await once('k', slow);
-assert.equal(calls, 2, 'a later call must run again');
-
-let failed = 0;
-await once('bad', () => { throw new Error('boom'); }).catch(() => failed++);
-assert.equal(failed, 1, 'a sync throw must reject, not escape');
-assert.equal(once.size(), 0, 'a rejection must not poison the slot');
-
 // :::::: assertDriver
 assert.throws(() => assertDriver({ get: () => {} }), /missing: clear, delete, keys, set/);
-
-// :::::: quota + channel degrade instead of throwing
-assert.equal(typeof (await quota.estimate()).supported, 'boolean');
-assert.equal(await quota.persist(), false);
-const channel = createChannel('smoke');
-channel.post({ hello: 1 });
-channel.close();
 
 console.log('core: all assertions passed');

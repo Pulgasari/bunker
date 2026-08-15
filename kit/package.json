@@ -1,7 +1,7 @@
 {
   "name"        : "@bunker/kit",
   "version"     : "0.1.0",
-  "description" : "Every bunker package, pre-wired: cache with an IndexedDB L2, namespaced storage and files.",
+  "description" : "Every bunker package, pre-wired: policy over an IndexedDB L2, namespaced storage and a cache.",
   "type"        : "module",
   "main"        : "./index.js",
   "module"      : "./index.js",
@@ -13,8 +13,9 @@
     "@bunker/cache"   : "workspace:*",
     "@bunker/core"    : "workspace:*",
     "@bunker/db"      : "workspace:*",
-    "@bunker/files"   : "workspace:*",
-    "@bunker/storage" : "workspace:*"
+    "@bunker/policy"  : "workspace:*",
+    "@bunker/storage" : "workspace:*",
+    "@bunker/utils"   : "workspace:*"
   },
   "files": [
     "index.js",

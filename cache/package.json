@@ -1,7 +1,7 @@
 {
   "name"        : "@bunker/cache",
   "version"     : "0.1.0",
-  "description" : "TTL and stale-while-revalidate over any bunker driver, with single flight and an LRU ceiling.",
+  "description" : "Cache API wrapper for window and service worker, with a transform hook and stale-while-revalidate.",
   "type"        : "module",
   "main"        : "./index.js",
   "module"      : "./index.js",
@@ -10,7 +10,8 @@
     ".": "./index.js"
   },
   "dependencies": {
-    "@bunker/core": "workspace:*"
+    "@bunker/core" : "workspace:*",
+    "@bunker/utils": "workspace:*"
   },
   "files": [
     "index.js",
@@ -22,6 +23,6 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/pulgasari/bunker.git",
-    "directory": "cache"
+    "directory": "files"
   }
 }

@@ -5,9 +5,7 @@
   "exports": {
     "."        : "./index.js",
     "./driver" : "./driver.js",
-    "./keys"   : "./keys.js",
-    "./quota"  : "./quota.js",
-    "./sync"   : "./sync.js"
+    "./keys"   : "./keys.js"
   },
   "publish": {
     "include": [

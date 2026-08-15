@@ -1,10 +1,11 @@
 {
-  "name": "@bunker/files",
+  "name": "@bunker/policy",
   "version": "0.1.0",
   "license": "MIT",
   "exports": "./index.js",
   "imports": {
-    "@bunker/core": "jsr:@bunker/core@^0.1.0"
+    "@bunker/core" : "jsr:@bunker/core@^0.1.0",
+    "@bunker/utils": "jsr:@bunker/utils@^0.1.0"
   },
   "publish": {
     "include": [

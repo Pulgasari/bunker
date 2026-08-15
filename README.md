@@ -14,28 +14,37 @@ the one property that decides what you can build on them:
 bunker gives each one a package, and keeps caching *policy* out of all of them.
 
 ```
-@bunker/core      driver contract, keyspaces, codecs, quota, cross-tab, single flight
+@bunker/core      driver contract, keyspaces, codecs
 @bunker/db        IndexedDB
 @bunker/storage   localStorage / sessionStorage, synchronous
-@bunker/files     Cache API, window and service worker
-@bunker/cache     TTL and stale-while-revalidate over any driver
-@bunker/kit       the five above, pre-wired
+@bunker/cache     Cache API, window and service worker
+@bunker/policy    TTL and stale-while-revalidate over any driver
+@bunker/utils     memoize, single flight, content hash, quota, cross-tab
+@bunker/kit       the six above, pre-wired
 ```
+
+Two of those names are worth being precise about: `@bunker/cache` is the *Cache API*,
+the browser store that holds `Request`/`Response` pairs. `@bunker/policy` is the one
+package that stores nothing at all — it wraps a driver and decides when what it holds
+is still good.
 
 ## Layering
 
-Every package depends on `@bunker/core` and on nothing else:
-
 ```
-core
- ├── db       -> exports a driver
- ├── storage  -> exports a driver
- ├── files    -> exports a driver
- └── cache    -> takes a driver, knows none of them
+utils
+ └── core
+      ├── db       -> exports a driver
+      ├── storage  -> exports a driver
+      ├── cache    -> exports a driver
+      └── policy   -> takes a driver, knows none of them
 ```
 
-`@bunker/cache` does not import `db`, `storage` or `files`. Want an IndexedDB L2? Hand
-it that driver. This keeps `cache` usable on its own (memory only) and keeps the
+`@bunker/utils` is a leaf with no dependencies of its own: in-process helpers, nothing
+that survives a reload. Everything else depends on `@bunker/core` and on nothing but
+that and utils.
+
+`@bunker/policy` does not import `db`, `storage` or `cache`. Want an IndexedDB L2? Hand
+it that driver. This keeps `policy` usable on its own (memory only) and keeps the
 packages from growing into each other. `@bunker/kit` is the single place where the
 wiring happens.
 
@@ -45,9 +54,10 @@ wiring happens.
   paint*: theme, skin, critical CSS, font metrics. Synchronous is the feature here.
 - **`db`** — anything structured or large that may be async: compiled output, datasets,
   blobs, offline data.
-- **`files`** — anything with a URL: stylesheets, `woff2`, images, wasm. A service worker
+- **`cache`** — anything with a URL: stylesheets, `woff2`, images, wasm. A service worker
   answers the real request from here, so the browser's own loading path is untouched.
-- **`cache`** — not a place to put things. A policy you wrap around one of the above.
+- **`policy`** — not a place to put things. Something you wrap around one of the above.
+- **`utils`** — the small in-process helpers the packages share. No I/O, nothing stored.
 
 ## Why the split matters: rendering without a flash
 
@@ -59,7 +69,7 @@ it is otherwise.
 
 Two paths, and they complement each other:
 
-**A service worker over `@bunker/files`** answers the request for your stylesheet from
+**A service worker over `@bunker/cache`** answers the request for your stylesheet from
 the cache and revalidates in the background. The `<link rel=stylesheet>` stays an
 ordinary render-blocking link — the browser waits, but only on a cache hit. No JS on
 the critical path. It does not cover the very first visit, and it needs HTTPS or

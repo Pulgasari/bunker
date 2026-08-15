@@ -3,9 +3,10 @@
     "./cache",
     "./core",
     "./db",
-    "./files",
     "./kit",
-    "./storage"
+    "./policy",
+    "./storage",
+    "./utils"
   ],
   "tasks": {
     "check"       : "deno check */*.js",

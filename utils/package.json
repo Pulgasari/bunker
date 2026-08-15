@@ -1,0 +1,38 @@
+{
+  "name"        : "@bunker/utils",
+  "version"     : "0.1.0",
+  "description" : "Small in-process helpers shared by the bunker packages: memoization, single flight, content hashing, quota and cross-tab signalling.",
+  "type"        : "module",
+  "main"        : "./index.js",
+  "module"      : "./index.js",
+  "types"       : "./index.d.ts",
+  "exports": {
+    "."              : "./index.js",
+    "./channel"      : "./channel.js",
+    "./channel.js"   : "./channel.js",
+    "./hash"         : "./hash.js",
+    "./hash.js"      : "./hash.js",
+    "./lazy"         : "./lazy.js",
+    "./lazy.js"      : "./lazy.js",
+    "./lru"          : "./lru.js",
+    "./lru.js"       : "./lru.js",
+    "./memoize"      : "./memoize.js",
+    "./memoize.js"   : "./memoize.js",
+    "./quota"        : "./quota.js",
+    "./quota.js"     : "./quota.js",
+    "./singleFlight" : "./singleFlight.js",
+    "./singleFlight.js" : "./singleFlight.js"
+  },
+  "files": [
+    "*.js",
+    "index.d.ts",
+    "readme.md"
+  ],
+  "sideEffects": false,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pulgasari/bunker.git",
+    "directory": "utils"
+  }
+}
