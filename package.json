@@ -8,8 +8,8 @@
     "cache",
     "core",
     "db",
-    "files",
     "kit",
+    "policy",
     "storage"
   ],
   "license": "MIT",

@@ -2,7 +2,7 @@
 
 // :::::: DRIVER
 
-/** The full contract every driver implements. Values move through opaque — expiry and eviction are `@bunker/cache`'s job. */
+/** The full contract every driver implements. Values move through opaque — expiry and eviction are `@bunker/policy`'s job. */
 export interface Driver {
   /** Identifies the backing store, e.g. `memory`, `local`, `indexeddb`. */
   readonly name?: string;

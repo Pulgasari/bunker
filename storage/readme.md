@@ -32,7 +32,7 @@ sweepSync  ()                     -> number
 ```
 
 The async `@bunker/core` driver contract is implemented too, so a storage instance
-can back a `@bunker/cache` like any other driver.
+can back a `@bunker/policy` like any other driver.
 
 ## Nothing throws
 

@@ -3,8 +3,8 @@
     "./cache",
     "./core",
     "./db",
-    "./files",
     "./kit",
+    "./policy",
     "./storage"
   ],
   "tasks": {

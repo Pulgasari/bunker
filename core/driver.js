@@ -3,7 +3,7 @@
 import { NO_KEYSPACE } from './keys.js';
 
 // every driver implements this async surface. it is the whole contract:
-// storage policy (ttl, eviction, revalidation) lives in @bunker/cache, never here,
+// storage policy (ttl, eviction, revalidation) lives in @bunker/policy, never here,
 // so a driver only ever moves opaque values in and out.
 export const DRIVER_METHODS = ['clear', 'delete', 'get', 'keys', 'set'];
 

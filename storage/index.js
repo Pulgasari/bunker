@@ -180,7 +180,7 @@ export function createStorage (options = {}) {
       catch (e) { fail('has', key, e); return false; }
     },
 
-    // driver contract, so @bunker/cache and friends can take this as a backend
+    // driver contract, so @bunker/policy and friends can take this as a backend
     clear  : ()            => { clearSync(); return Promise.resolve(); },
     delete : (key)         => { deleteSync(key); return Promise.resolve(); },
     get    : (key)         => Promise.resolve(getSync(key)),

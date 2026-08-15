@@ -257,7 +257,7 @@ export class BunkerDB {
 
   // :::::: DRIVER :::::::::::::::::::::::::::::::::::::::::::::::
 
-  // a @bunker/core driver over a single table, so @bunker/cache can use this as L2
+  // a @bunker/core driver over a single table, so @bunker/policy can use this as L2
   // without ever importing @bunker/db.
   driver (table = 'kv') {
     return {

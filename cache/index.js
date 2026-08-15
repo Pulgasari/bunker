@@ -1,247 +1,218 @@
 // @bunker/cache
 // @ts-self-types="./index.d.ts"
 
-import {
-  NO_KEYSPACE, 
-  createKeyspace, 
-  createMemoryDriver, 
-  createSingleFlight, 
-  withKeyspace,
-} from './../core/index.js'; // from '@bunker/core';
-
-// :::::: ENTRIES ::::::::::::::::::::::::::::::::::::::::::::::::
+import { createSingleFlight } from './../core/index.js'; // from '@bunker/core';
 
 /*
-  an entry is fresh until `expire`, then servable-but-stale until `staleUntil`,
-  then dead. a null `expire` means it never ages at all.
+  the cache api stores Request/Response pairs rather than values, which is exactly
+  why it is the one that fixes render blocking: a service worker answers the real
+  request for a stylesheet from here, so the browser's own loading path is untouched
+  and no javascript sits on the critical path.
 
-  the two windows are separate on purpose: ttl is how long the value is trusted,
-  staleTtl is how long it may still be handed out while a fresh one is fetched.
+  metadata rides along as headers on the stored response. the source validators are
+  kept separately from any the transformed body might carry: after an ass -> css
+  transform the upstream etag describes the *source*, which is precisely what a
+  conditional revalidation needs to ask about.
 */
-const 
-FRESH = 'fresh', 
-STALE = 'stale', 
-DEAD  = 'dead',
-MISS  = 'miss';
+const STAMP           = 'x-bunker-at';
+const SOURCE_ETAG     = 'x-bunker-source-etag';
+const SOURCE_MODIFIED = 'x-bunker-source-modified';
 
-function createEntry (value, ttl, staleTtl, now) {
-  const expire = ttl ? now + ttl : null;
-  return {
-    at         : now,
-    staleUntil : expire && staleTtl ? expire + staleTtl : expire,
-    expire, value,
-  };
+const isSupported = ()        => typeof caches !== 'undefined';
+const urlOf       = (request) => typeof request === 'string' ? request : request.url;
+
+// a stored response carries our stamp plus whatever validators the source had
+function stamp (response, body, { at = Date.now(), etag = null, modified = null, type = null } = {}) {
+  const headers = new Headers(response.headers);
+
+  headers.set(STAMP, String(at));
+  if (etag)     headers.set(SOURCE_ETAG, etag);
+  if (modified) headers.set(SOURCE_MODIFIED, modified);
+  if (type)     headers.set('content-type', type);
+
+  return new Response(body, { headers, status: response.status, statusText: response.statusText });
 }
 
-function stateOf (entry, now) {
-  if (!entry) return MISS;
-  if (!entry.expire    || entry.expire     > now) return FRESH;
-  if (entry.staleUntil && entry.staleUntil > now) return STALE;
-  return DEAD;
-}
+const ageOf = (response) => {
+  const at = Number(response.headers.get(STAMP));
+  return Number.isFinite(at) && at > 0 ? Date.now() - at : Infinity;
+};
 
-// :::::: CACHE ::::::::::::::::::::::::::::::::::::::::::::::::::
+// :::::: FILES ::::::::::::::::::::::::::::::::::::::::::::::::::
 
 export function createCache (options = {}) {
-  const {
-    driver     = createMemoryDriver(),
-    max        = 0,
-    maxEntries = 0,
-    namespace  = null,
-    onError    = null,
-    staleTtl   = 0,
-    ttl        = null,
-    version    = 1,
-  } = options;
+  const { name = 'bunker', onError = null } = options;
+  const once = createSingleFlight();
+  const fail = (operation, key, error) => { onError?.({ error, key, operation }); };
+  let opened = null;
 
-  const keyspace = namespace ? createKeyspace({ namespace, version }) : NO_KEYSPACE;
-  const store    = withKeyspace(driver, keyspace);
-  const memory   = new Map;         // l1. insertion order doubles as lru order.
-  const once     = createSingleFlight();
-  const now      = () => Date.now();
-  const fail     = (operation, key, error) => { onError?.({ error, key, operation }); };
-
-  const writeThrough = async (key, entry) => {
-    try       { await store.set(key, entry); }
-    catch (e) { fail('set', key, e); }
-  };
-
-  const dropThrough = async (key) => {
-    try       { await store.delete(key); }
-    catch (e) { fail('delete', key, e); }
-  };
-
-  /*
-    touch on read, so the lru order reflects use and not just insertion.
-
-    `max` bounds l1 only, and evicting from l1 deliberately leaves l2 alone: l1 is
-    also filled by reads, so writing the eviction through would delete entries from
-    the persistent layer merely because they scrolled out of the memory window.
-    the l2 ceiling is `maxEntries` and lives in prune().
-  */
-  function remember (key, entry) {
-    memory.delete(key);
-    memory.set(key, entry);
-    if (max > 0) while (memory.size > max) memory.delete(memory.keys().next().value);
+  function open () {
+    if (!isSupported()) return Promise.resolve(null);
+    return opened ??= caches.open(name).catch(error => { fail('open', name, error); opened = null; return null; });
   }
 
-  async function readEntry (key) {
-    const cached = memory.get(key);
-    if (cached) { remember(key, cached); return cached; }
-
-    let entry = null;
-    try       { entry = await store.get(key); }
-    catch (e) { fail('get', key, e); return null; }
-
-    // an l2 written by an older version of the code may not look like an entry
-    if (!entry || typeof entry !== 'object' || !('value' in entry)) return null;
-
-    remember(key, entry);
-    return entry;
+  async function match (request) {
+    const cache = await open(); if (!cache) return null;
+    try       { return (await cache.match(request)) ?? null; }
+    catch (e) { fail('match', urlOf(request), e); return null; }
   }
 
-  // :::::: reads
+  async function put (request, response) {
+    const cache = await open(); if (!cache) return false;
 
-  const absent = () => ({ at: null, expire: null, staleUntil: null, state: MISS, value: null });
+    // an opaque response has status 0 and cache.put() rejects on it outright
+    if (response.type === 'opaque' || response.status === 0) return false;
 
-  async function entry (key) {
-    const found = await readEntry(key);
-    const state = stateOf(found, now());
-
-    if (state === DEAD) { await remove(key); return absent(); }
-    if (state === MISS) return absent();
-
-    return { at: found.at, expire: found.expire, staleUntil: found.staleUntil, state, value: found.value };
+    try       { await cache.put(request, response); return true; }
+    catch (e) { fail('put', urlOf(request), e); return false; }
   }
 
-  async function get (key, { allowStale = false } = {}) {
-    const found = await entry(key);
-    if (found.state === FRESH)               return found.value;
-    if (found.state === STALE && allowStale) return found.value;
-    return null;
+  async function remove (request) {
+    const cache = await open(); if (!cache) return false;
+    try       { return await cache.delete(request); }
+    catch (e) { fail('delete', urlOf(request), e); return false; }
   }
 
-  async function has (key) {
-    return (await entry(key)).state !== MISS;
-  }
-
-  // :::::: writes
-
-  async function set (key, value, overrides = {}) {
-    const created = createEntry(value, overrides.ttl ?? ttl, overrides.staleTtl ?? staleTtl, now());
-    remember(key, created);
-    await writeThrough(key, created);
-    return value;
-  }
-
-  async function remove (key) {
-    memory.delete(key);
-    once.abort(key);
-    await dropThrough(key);
+  async function keys () {
+    const cache = await open(); if (!cache) return [];
+    try       { return await cache.keys(); }
+    catch (e) { fail('keys', null, e); return []; }
   }
 
   async function clear () {
-    memory.clear();
-    once.clear();
-    try { await store.clear(); }
-    catch (error) { fail('clear', null, error); }
+    if (!isSupported()) return false;
+    opened = null;
+    try       { return await caches.delete(name); }
+    catch (e) { fail('clear', name, e); return false; }
   }
 
-  async function keys (prefix = '') {
-    try       { return await store.keys(prefix); }
-    catch (e) { fail('keys', prefix, e); return [...memory.keys()].filter(key => key.startsWith(prefix)); }
+  // :::::: fetch + transform + store
+
+  // a conditional request, so an unchanged source costs a 304 and no body at all
+  function conditional (request, cached) {
+    const etag     = cached?.headers.get(SOURCE_ETAG);
+    const modified = cached?.headers.get(SOURCE_MODIFIED);
+    if (!etag && !modified) return request;
+
+    try {
+      const headers = new Headers(request instanceof Request ? request.headers : undefined);
+      if (etag)     headers.set('If-None-Match', etag);
+      if (modified) headers.set('If-Modified-Since', modified);
+      return new Request(request, { headers });
+    } catch {
+      // navigation requests and a few other modes cannot be reconstructed. no
+      // conditional then, just a plain refetch.
+      return request;
+    }
+  }
+
+  async function store (request, response, transform, type) {
+    const meta = {
+      etag     : response.headers.get('etag'),
+      modified : response.headers.get('last-modified'),
+      type,
+    };
+
+    if (!transform) {
+      // keep one copy for the cache and hand the other back, a body reads once
+      const stored = stamp(response, await response.clone().arrayBuffer(), meta);
+      await put(request, stored.clone());
+      return stored;
+    }
+
+    const source      = await response.text();
+    const transformed = await transform(source, { request, response });
+    const stored      = stamp(response, transformed, meta);
+
+    await put(request, stored.clone());
+    return stored;
   }
 
   /*
-    entries only expire lazily on read, so a key nobody reads again is never
-    reclaimed. prune sweeps actively, and is also where the l2 ceiling is enforced:
-    it already walks every key, so capping costs nothing extra here, whereas doing
-    it per write would mean a full scan on every set().
+    the anti-flicker primitive.
 
-    counts both layers, and reports what it removed even when there is no l2 —
-    the old implementation returned 0 in that case despite having emptied l1.
+    a cached response is returned immediately and revalidated in the background.
+    with `ttl` set, a response younger than it skips the revalidation entirely.
+
+    `transform` turns the source into what gets stored, which is where an
+    ass -> css compile hooks in: the compile is paid once, not on every navigation.
   */
-  async function prune (prefix = '') {
-    const stamp   = now();
-    const removed = new Set; // a key living in both layers must count once, not twice
+  async function staleWhileRevalidate (request, options = {}) {
+    const { onRevalidate = null, transform = null, ttl = 0, type = null } = options;
 
-    for (const [key, cached] of memory) {
-      if (key.startsWith(prefix) && stateOf(cached, stamp) === DEAD) { memory.delete(key); removed.add(key); }
-    }
+    const cached = await match(request);
+    if (cached && ttl > 0 && ageOf(cached) < ttl) return cached;
 
-    const survivors = [];
+    const revalidate = () => once(urlOf(request), async () => {
+      const response = await fetch(conditional(request, cached));
 
-    for (const key of await keys(prefix)) {
-      let stored = null;
-      try       { stored = await store.get(key); }
-      catch (e) { fail('get', key, e); continue; }
-
-      if (stateOf(stored, stamp) === DEAD) {
-        memory.delete(key);
-        await dropThrough(key);
-        removed.add(key);
-      } else if (maxEntries > 0) {
-        survivors.push([key, stored?.at ?? 0]);
+      // unchanged: keep the stored body, just refresh its age. re-read from the
+      // cache rather than reusing `cached`, whose body the caller may already be
+      // consuming — clone() only works while a body is still untouched.
+      if (response.status === 304 && cached) {
+        const stored = await match(request);
+        if (stored) {
+          await put(request, stamp(stored, await stored.arrayBuffer(), {
+            etag     : stored.headers.get(SOURCE_ETAG),
+            modified : stored.headers.get(SOURCE_MODIFIED),
+          }));
+        }
+        return null;
       }
-    }
 
-    // oldest first, drop whatever is over the ceiling
-    if (maxEntries > 0 && survivors.length > maxEntries) {
-      survivors.sort((a, b) => a[1] - b[1]);
-      for (const [key] of survivors.slice(0, survivors.length - maxEntries)) {
-        memory.delete(key);
-        await dropThrough(key);
-        removed.add(key);
-      }
-    }
-
-    return removed.size;
-  }
-
-  // :::::: stale-while-revalidate
-
-  /*
-    the primitive everything else here exists for.
-
-    fresh  -> the cached value
-    stale  -> the cached value immediately, and a revalidation in the background
-    miss   -> awaits the fetcher
-
-    onRevalidate fires only when the background fetch produced something different.
-    that is what lets a caller show the old value now and decide for itself whether
-    a late swap is worth the reflow.
-  */
-  async function swr (key, fetcher, overrides = {}) {
-    const found = await entry(key);
-
-    if (found.state === FRESH) return found.value;
-
-    const revalidate = () => once(key, async () => {
-      const fresh = await fetcher(key);
-      await set(key, fresh, overrides);
-      return fresh;
+      if (!response.ok) throw new Error(`[bunker] ${response.status} ${response.statusText} for ${urlOf(request)}`);
+      return store(request, response, transform, type);
     });
 
-    if (found.state === STALE) {
-      const { onRevalidate } = overrides;
-
+    if (cached) {
       revalidate()
-        .then(fresh => { if (onRevalidate && !Object.is(fresh, found.value)) onRevalidate(fresh, found.value); })
-        .catch(error => fail('revalidate', key, error)); // keep serving stale, the network can fail
-
-      return found.value;
+        .then(fresh => { if (fresh && onRevalidate) onRevalidate(fresh.clone()); })
+        .catch(error => fail('revalidate', urlOf(request), error)); // offline keeps the stale copy
+      return cached;
     }
 
     return revalidate();
   }
 
+  // :::::: DRIVER :::::::::::::::::::::::::::::::::::::::::::::::
+
+  /*
+    a @bunker/core driver over text bodies, so compiled output can live in the cache
+    api instead of indexeddb. keys become urls under `origin`, which never leave the
+    cache and only have to be stable and unique.
+  */
+  function driver ({ origin = 'https://bunker.invalid/' } = {}) {
+    const toUrl = (key) => new URL(encodeURIComponent(key), origin).href;
+
+    return {
+      name   : `cache-api:${name}`,
+      sync   : false,
+      clear  : ()           => clear(),
+      delete : (key)        => remove(toUrl(key)).then(() => undefined),
+      set    : (key, value) => put(toUrl(key), new Response(JSON.stringify(value))).then(() => undefined),
+
+      async get (key) {
+        const response = await match(toUrl(key));
+        if (!response) return null;
+        try   { return JSON.parse(await response.text()); }
+        catch { return null; } // a body written by something else is a miss, not a crash
+      },
+
+      async keys (prefix = '') {
+        const stored = await keys();
+        return stored
+          .map(request => decodeURIComponent(new URL(request.url).pathname.slice(1)))
+          .filter(key => key.startsWith(prefix));
+      },
+    };
+  }
+
   return {
+    name, driver, isSupported,
+    clear, keys, match, open, put, staleWhileRevalidate,
     delete : remove,
-    driver : store, keyspace,
-    name   : `cache(${store.name ?? 'driver'})`,
-    clear, entry, get, has, keys, prune, set, swr,
-    get size () { return memory.size; },
   };
 }
 
+export const cache = createCache();
 export default createCache;

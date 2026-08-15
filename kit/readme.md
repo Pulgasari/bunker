@@ -6,9 +6,9 @@ Every bunker package, pre-wired under one namespace.
 import bunker from '@bunker/kit';
 
 bunker.local.setSync('theme', 'oled');            // synchronous, survives reload
-await bunker.cache.swr('config', fetchConfig);    // ttl + revalidation over IndexedDB
+await bunker.policy.swr('config', fetchConfig);   // ttl + revalidation over IndexedDB
 await bunker.db.set('users', 'ada', { … });       // structured storage
-await bunker.files.staleWhileRevalidate('/app.ass', { transform: compile });
+await bunker.cache.staleWhileRevalidate('/app.ass', { transform: compile });
 ```
 
 Or with your own settings:
@@ -31,9 +31,9 @@ name, and the keyspace both storages write under.
 
 | | |
 | --------- | ------------------------------------------------------------ |
-| `cache`   | TTL and eviction over an IndexedDB L2 |
+| `cache`   | Cache API, for anything with a URL |
 | `db`      | IndexedDB directly |
-| `files`   | Cache API, for anything with a URL |
+| `policy`  | TTL and eviction over an IndexedDB L2 |
 | `local`   | `localStorage` — synchronous, readable before the first paint |
 | `session` | `sessionStorage` |
 | `core`    | the driver contract and its primitives |
@@ -41,17 +41,17 @@ name, and the keyspace both storages write under.
 ## This is the only package that couples them
 
 Everywhere else in this repo, a package depends on `@bunker/core` and nothing more.
-`@bunker/cache` in particular does not import `@bunker/db` — it takes a driver and has
+`@bunker/policy` in particular does not import `@bunker/db` — it takes a driver and has
 no idea what is behind it.
 
 That is what makes the wiring a one-liner here, and it is also why you can skip this
 package entirely and assemble your own:
 
 ```javascript
-import { createCache } from '@bunker/cache';
+import { createPolicy } from '@bunker/policy';
 import { createDb }    from '@bunker/db';
 
-const cache = createCache({ driver: createDb('myapp').driver('kv'), ttl: 60_000 });
+const cache = createPolicy({ driver: createDb('myapp').driver('kv'), ttl: 60_000 });
 ```
 
 Importing the kit constructs the shared `bunker` instance, which probes web storage

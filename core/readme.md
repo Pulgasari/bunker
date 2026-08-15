@@ -10,7 +10,7 @@ import { createKeyspace, createMemoryDriver, withKeyspace } from '@bunker/core';
 ## Driver contract
 
 A driver moves opaque values in and out. That is all it does — TTL, eviction and
-revalidation live in `@bunker/cache`, never in a driver.
+revalidation live in `@bunker/policy`, never in a driver.
 
 ```javascript
 {

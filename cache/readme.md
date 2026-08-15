@@ -1,103 +1,78 @@
 # @bunker/cache
 
-Caching policy — TTL, staleness, revalidation, eviction — over any driver.
-
-This package knows nothing about IndexedDB, localStorage or the Cache API. It takes a
-driver and applies a policy to it. That is the whole point of the split: swapping the
-backend is a one-line change and none of the logic here moves.
+The Cache API — `Request`/`Response` pairs, in the window and in a service worker.
 
 ```javascript
 import { createCache } from '@bunker/cache';
-import { createDb }    from '@bunker/db';
 
-const cache = createCache({
-  driver   : createDb('myapp').driver('kv'),  // L2, optional. memory-only without it
-  ttl      : 60_000,                          // how long a value is trusted
-  staleTtl : 24 * 60 * 60_000,                // how long it may still be served after that
+const cache = createCache({ name: 'sheets' });
+const css   = await cache.staleWhileRevalidate('/app.ass', { transform: compile, type: 'text/css' });
+```
+
+## Why this one fixes render blocking
+
+The other packages store *values*. This one stores responses, which means a service
+worker can answer the browser's own request:
+
+```javascript
+self.addEventListener('fetch', (event) => {
+  if (!event.request.url.endsWith('.ass')) return;
+  event.respondWith(cache.staleWhileRevalidate(event.request, { transform: compile, type: 'text/css' }));
 });
 ```
 
-## Two windows, not one
+The `<link rel=stylesheet>` stays an ordinary render-blocking link. The browser waits
+for it, but only on a cache hit. No JavaScript on the critical path, no flash, and the
+compile is paid once instead of on every navigation.
 
-An entry is **fresh** until `ttl` runs out, then **stale** but still servable for
-`staleTtl`, then dead.
+It does not cover the very first visit — a service worker has to be installed first —
+and it needs HTTPS or localhost. For that gap, see `@bunker/storage` and the
+synchronous boot path.
+
+## Revalidation is conditional
+
+The source's `ETag` and `Last-Modified` are stored next to the body under their own
+headers. That separation matters once `transform` is involved: after an ASS → CSS
+compile the upstream validator describes the *source*, which is exactly what the
+revalidation needs to ask about.
+
+So an unchanged file costs a 304 and no body at all, and `onRevalidate` stays quiet —
+a 304 is not a change.
 
 ```javascript
-await cache.entry('k'); // { at, expire, staleUntil, state, value }
-```
-
-`get()` returns `null` for a stale entry unless you ask for it:
-
-```javascript
-await cache.get('k');                        // null once stale
-await cache.get('k', { allowStale: true });  // the old value
-```
-
-## stale-while-revalidate
-
-```javascript
-const css = await cache.swr('app.ass', fetchAndCompile, {
-  onRevalidate: (fresh, stale) => console.log('changed while you were reading'),
+await cache.staleWhileRevalidate(request, {
+  ttl          : 60_000,                    // younger than this: no network at all
+  transform    : compile,
+  onRevalidate : (fresh) => swapIn(fresh),  // only when the body actually changed
 });
 ```
 
-- **fresh** → the cached value, no fetch
-- **stale** → the cached value *immediately*, revalidating in the background
-- **miss** → awaits the fetcher
+A failing revalidation is reported through `onError` and leaves the cached copy in
+place. Going offline must not blank the page.
 
-`onRevalidate` fires only when the background fetch produced something *different*.
-That is deliberate: it lets a caller render the old value now and decide for itself
-whether a late swap is worth the reflow. For stylesheets it usually is not — write the
-new version, apply it on the next load.
+Concurrent requests for one URL collapse into a single fetch.
 
-A failing revalidation is reported through `onError` and leaves the stale value in
-place. Losing the network should not blank the page.
+## Metadata
 
-## Single flight
+Stored responses carry three extra headers:
 
-Concurrent misses on one key collapse into a single fetch:
-
-```javascript
-await Promise.all([cache.swr('k', fetcher), cache.swr('k', fetcher)]); // fetcher ran once
+```
+x-bunker-at               when it was stored
+x-bunker-source-etag      the source's ETag
+x-bunker-source-modified  the source's Last-Modified
 ```
 
-## Eviction
-
-Two ceilings, because the layers cannot share one:
-
-- **`max`** bounds L1, the in-memory layer, least-recently-used first. Evicting from
-  L1 leaves L2 alone on purpose — L1 is filled by reads as well as writes, so writing
-  the eviction through would delete persistent entries merely because they scrolled
-  out of the memory window.
-- **`maxEntries`** bounds L2, enforced by `prune()`, oldest first.
+## As a key-value driver
 
 ```javascript
-await cache.prune();        // drop dead entries, then apply maxEntries
-await cache.prune('css:');  // only under this prefix
+const policy = createPolicy({ driver: cache.driver() });
 ```
 
-Entries otherwise expire lazily, on read. A key nobody reads again is never reclaimed
-on its own, so `prune()` at boot or on an idle callback is worth it.
+JSON bodies under synthetic URLs, for when compiled output belongs in the Cache API
+rather than IndexedDB.
 
-`prune()` returns the number of **distinct** keys removed — a key living in both layers
-counts once.
+## Degrading
 
-## Failure
-
-A cache that throws is worse than a cache that misses. `set()` never rejects: a failed
-L2 write is reported through `onError` and the value stays an L1 hit. A value in L2
-that does not look like an entry — written by an older build, say — reads as a miss
-rather than blowing up.
-
-```javascript
-createCache({ onError: ({ operation, key }) => report(operation, key) });
-```
-
-## Namespaces
-
-```javascript
-createCache({ driver, namespace: 'aufbau', version: 2 });
-```
-
-Several caches can share one driver without colliding. Bumping `version` orphans
-everything written before it.
+Where the Cache API is missing — an insecure context, a browser without it —
+`match()` answers `null`, `put()` answers `false`, and `staleWhileRevalidate()` still
+fetches and transforms. Nothing throws.
