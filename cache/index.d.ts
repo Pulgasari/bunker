@@ -20,6 +20,8 @@ export type Transform = (
 ) => string | Promise<string>;
 
 export interface SwrOptions {
+  /** Receives the background revalidation. A service worker passes `event.waitUntil`. */
+  keepAlive?: (pending: Promise<unknown>) => void;
   /** Called with a clone of the fresh response, only when revalidation produced a new body. */
   onRevalidate?: (fresh: Response) => void;
   /** Turns the source into what gets stored — where an ASS → CSS compile hooks in. */

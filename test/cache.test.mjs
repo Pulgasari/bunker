@@ -164,6 +164,24 @@ const SHEET = 'https://example.test/app.ass';
   globalThis.caches = saved;
 }
 
+// :::::: keepAlive hands the revalidation to the caller
+{
+  const routes = { [SHEET]: { body: 'a{}', etag: 'v1' } };
+  installFetch(routes);
+  const cache = createCache({ name: 'sheets-10' });
+
+  await cache.staleWhileRevalidate(SHEET);          // seed
+  routes[SHEET] = { body: 'b{}', etag: 'v2' };
+
+  let pending = null;
+  const served = await cache.staleWhileRevalidate(SHEET, { keepAlive: (promise) => pending = promise });
+
+  assert.equal(await served.text(), 'a{}', 'the stale copy goes out first');
+  assert.ok(pending instanceof Promise, 'keepAlive receives the revalidation');
+  await pending;
+  assert.equal(await (await cache.match(SHEET)).text(), 'b{}', 'awaiting it settles the refresh');
+}
+
 // :::::: proxy sugar
 {
   const cache = createCache({ name: 'sheets-9' });

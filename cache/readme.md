@@ -21,6 +21,10 @@ self.addEventListener('fetch', (event) => {
 });
 ```
 
+`keepAlive` matters here: a service worker may be killed the moment it has answered,
+which would lose the refresh it just started. Passing `event.waitUntil` keeps it alive
+until the revalidation settles.
+
 The `<link rel=stylesheet>` stays an ordinary render-blocking link. The browser waits
 for it, but only on a cache hit. No JavaScript on the critical path, no flash, and the
 compile is paid once instead of on every navigation.

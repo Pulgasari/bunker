@@ -136,9 +136,13 @@ export function createCache (options = {}) {
 
     `transform` turns the source into what gets stored, which is where an
     ass -> css compile hooks in: the compile is paid once, not on every navigation.
+
+    `keepAlive` receives the background revalidation. a service worker passes its
+    event.waitUntil here — without it the worker may be killed the moment it has
+    answered, and the refresh it started is lost.
   */
   async function staleWhileRevalidate (request, options = {}) {
-    const { onRevalidate = null, transform = null, ttl = 0, type = null } = options;
+    const { keepAlive = null, onRevalidate = null, transform = null, ttl = 0, type = null } = options;
 
     const cached = await match(request);
     if (cached && ttl > 0 && ageOf(cached) < ttl) return cached;
@@ -165,9 +169,11 @@ export function createCache (options = {}) {
     });
 
     if (cached) {
-      revalidate()
+      const pending = revalidate()
         .then(fresh => { if (fresh && onRevalidate) onRevalidate(fresh.clone()); })
         .catch(error => fail('revalidate', urlOf(request), error)); // offline keeps the stale copy
+
+      keepAlive?.(pending);
       return cached;
     }
 
