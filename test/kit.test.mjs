@@ -8,7 +8,7 @@ installFetch({ 'https://example.test/app.ass': { body: 'a{}', etag: 'v1' } });
 const { createBunker, bunker } = await import('@bunker/kit');
 
 // :::::: the shared instance is wired end to end
-assert.ok(bunker.cache && bunker.core && bunker.db && bunker.policy && bunker.local && bunker.session);
+assert.ok(bunker.cache && bunker.core && bunker.db && bunker.policy && bunker.local && bunker.session && bunker.utils);
 assert.equal(bunker.db.name, 'bunker');
 assert.equal(bunker.cache.name, 'bunker');
 

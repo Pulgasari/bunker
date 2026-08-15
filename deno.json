@@ -5,7 +5,8 @@
     "./db",
     "./kit",
     "./policy",
-    "./storage"
+    "./storage",
+    "./utils"
   ],
   "tasks": {
     "check"       : "deno check */*.js",

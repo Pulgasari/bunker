@@ -37,6 +37,7 @@ name, and the keyspace both storages write under.
 | `local`   | `localStorage` — synchronous, readable before the first paint |
 | `session` | `sessionStorage` |
 | `core`    | the driver contract and its primitives |
+| `utils`   | memoize, single flight, content hash, quota, cross-tab |
 
 ## This is the only package that couples them
 

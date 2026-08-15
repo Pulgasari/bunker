@@ -10,7 +10,8 @@
     "db",
     "kit",
     "policy",
-    "storage"
+    "storage",
+    "utils"
   ],
   "license": "MIT",
   "repository": {

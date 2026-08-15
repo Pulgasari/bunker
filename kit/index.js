@@ -13,9 +13,11 @@ import { createCache }    from '@bunker/cache';
 import { createDb }       from '@bunker/db';
 import { createPolicy }   from '@bunker/policy';
 import { createStorage }  from '@bunker/storage';
+import * as utils         from '@bunker/utils';
 */
 
 import * as core          from './../core/index.js';
+import * as utils         from './../utils/index.js';
 import { createCache }    from './../cache/index.js';
 import { createDb }       from './../db/index.js';
 import { createPolicy }   from './../policy/index.js';
@@ -39,7 +41,7 @@ export function createBunker (options = {}) {
   const shared = { namespace, onError, version };
 
   return {
-    core, cache, db,
+    core, utils, cache, db,
 
     // ttl and eviction over an indexeddb l2
     policy : createPolicy({ ...shared, driver: db.driver(table), max, maxEntries, staleTtl, ttl }),
@@ -50,7 +52,7 @@ export function createBunker (options = {}) {
   };
 }
 
-export { createCache, createDb, createPolicy, createStorage, core };
+export { createCache, createDb, createPolicy, createStorage, core, utils };
 
 export const bunker = createBunker();
 export default bunker;

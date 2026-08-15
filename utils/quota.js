@@ -1,4 +1,4 @@
-// @bunker/core/quota.js
+// @bunker/utils/quota.js
 
 // indexeddb and the cache api share one origin quota, and under disk pressure the
 // browser evicts whole origins by least-recent-use. persist() opts out of that.

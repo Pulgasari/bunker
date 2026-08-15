@@ -1,0 +1,23 @@
+{
+  "name": "@bunker/utils",
+  "version": "0.1.0",
+  "license": "MIT",
+  "exports": {
+    "."              : "./index.js",
+    "./channel"      : "./channel.js",
+    "./hash"         : "./hash.js",
+    "./lazy"         : "./lazy.js",
+    "./lru"          : "./lru.js",
+    "./memoize"      : "./memoize.js",
+    "./quota"        : "./quota.js",
+    "./singleFlight" : "./singleFlight.js"
+  },
+  "publish": {
+    "include": [
+      "*.js",
+      "index.d.ts",
+      "readme.md",
+      "LICENSE"
+    ]
+  }
+}

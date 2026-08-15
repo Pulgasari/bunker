@@ -14,7 +14,8 @@
     "@bunker/core"    : "workspace:*",
     "@bunker/db"      : "workspace:*",
     "@bunker/policy"  : "workspace:*",
-    "@bunker/storage" : "workspace:*"
+    "@bunker/storage" : "workspace:*",
+    "@bunker/utils"   : "workspace:*"
   },
   "files": [
     "index.js",

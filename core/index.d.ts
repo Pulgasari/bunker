@@ -48,16 +48,6 @@ export declare function createMemoryDriver(): SyncDriver & { readonly size: numb
  */
 export declare function withKeyspace<T extends Driver>(driver: T, keyspace?: Keyspace): T;
 
-/** One pending promise per key, so concurrent misses collapse into a single fetch. */
-export declare function createSingleFlight(): SingleFlight;
-
-export interface SingleFlight {
-  <T>(key: string, factory: () => T | Promise<T>): Promise<T>;
-  /** Drops the pending entry without settling it; the next call starts fresh. */
-  abort(key: string): boolean;
-  clear(): void;
-  has(key: string): boolean;
-  size(): number;
 }
 
 // :::::: KEYS
@@ -106,42 +96,3 @@ export declare const codecs: {
   text: Codec<string>;
   none: Codec<unknown>;
 };
-
-// :::::: QUOTA
-
-export interface StorageEstimate {
-  quota: number;
-  /** `usage / quota`, or `0` when unknown. */
-  ratio: number;
-  supported: boolean;
-  usage: number;
-}
-
-/**
- * IndexedDB and the Cache API share one origin quota, and under disk pressure the
- * browser evicts whole origins by least-recent-use. localStorage is not covered.
- */
-export declare namespace quota {
-  function estimate(): Promise<StorageEstimate>;
-  function isPersisted(): Promise<boolean>;
-  /** `false` is a normal answer, not an error — engines may prompt or decide by engagement heuristics. */
-  function persist(): Promise<boolean>;
-  function isSupported(): boolean;
-  function isUnderPressure(threshold?: number): Promise<boolean>;
-}
-
-// :::::: SYNC
-
-export interface Channel {
-  readonly transport: 'broadcast-channel' | 'storage-event' | 'none';
-  close(): void;
-  post(message: unknown): void;
-  /** Returns an unsubscribe function. */
-  subscribe(listener: (message: unknown) => void): () => void;
-}
-
-/**
- * Cross-tab notification over `BroadcastChannel`, falling back to the localStorage
- * `storage` event. Neither delivers to the sender.
- */
-export declare function createChannel(name: string): Channel;

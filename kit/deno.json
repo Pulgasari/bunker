@@ -8,7 +8,8 @@
     "@bunker/core"    : "jsr:@bunker/core@^0.1.0",
     "@bunker/db"      : "jsr:@bunker/db@^0.1.0",
     "@bunker/policy"  : "jsr:@bunker/policy@^0.1.0",
-    "@bunker/storage" : "jsr:@bunker/storage@^0.1.0"
+    "@bunker/storage" : "jsr:@bunker/storage@^0.1.0",
+    "@bunker/utils"   : "jsr:@bunker/utils@^0.1.0"
   },
   "publish": {
     "include": [

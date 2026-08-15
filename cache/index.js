@@ -1,7 +1,7 @@
 // @bunker/cache
 // @ts-self-types="./index.d.ts"
 
-import { createSingleFlight } from './../core/index.js'; // from '@bunker/core';
+import { createSingleFlight } from './../utils/singleFlight.js'; // from '@bunker/utils/singleFlight.js';
 
 /*
   the cache api stores Request/Response pairs rather than values, which is exactly

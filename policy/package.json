@@ -10,7 +10,8 @@
     ".": "./index.js"
   },
   "dependencies": {
-    "@bunker/core": "workspace:*"
+    "@bunker/core" : "workspace:*",
+    "@bunker/utils": "workspace:*"
   },
   "files": [
     "index.js",

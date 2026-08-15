@@ -1,6 +1,7 @@
 // @bunker/kit
 
 import type * as core from '@bunker/core';
+import type * as utils from '@bunker/utils';
 import type { Cache } from '@bunker/cache';
 import type { BunkerDB } from '@bunker/db';
 import type { Policy } from '@bunker/policy';
@@ -23,6 +24,7 @@ export interface BunkerOptions {
 
 export interface Bunker {
   readonly core: typeof core;
+  readonly utils: typeof utils;
   readonly cache: Cache;
   readonly db: BunkerDB;
   /** TTL and eviction over an IndexedDB L2. */
@@ -42,6 +44,6 @@ export { createCache } from '@bunker/cache';
 export { createDb } from '@bunker/db';
 export { createPolicy } from '@bunker/policy';
 export { createStorage } from '@bunker/storage';
-export { core };
+export { core, utils };
 
 export default bunker;

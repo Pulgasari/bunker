@@ -55,34 +55,9 @@ clone.
 
 A malformed entry decodes to `null`, i.e. reads as a cache miss. It never throws.
 
-## Single flight
+## What moved out
 
-```javascript
-const once = createSingleFlight();
-await Promise.all([once('key', fetcher), once('key', fetcher)]); // fetcher ran once
-```
-
-## Quota
-
-```javascript
-import { quota } from '@bunker/core';
-
-await quota.persist();          // opt out of eviction; false is a normal answer
-await quota.estimate();         // { quota, ratio, supported, usage }
-await quota.isUnderPressure();  // ratio >= 0.9
-```
-
-IndexedDB and the Cache API share one origin quota and are evicted per origin under
-disk pressure. localStorage is not covered by any of it.
-
-## Cross-tab
-
-```javascript
-const channel = createChannel('aufbau:theme');
-const off     = channel.subscribe(message => console.log(message));
-
-channel.post({ theme: 'oled' });
-```
-
-`BroadcastChannel` where available (window, worker and service worker), otherwise the
-localStorage `storage` event. Neither delivers to the sender.
+`createSingleFlight`, `quota` and `createChannel` live in
+[`@bunker/utils`](../utils/readme.md). None of them touched the driver contract, and
+keeping them here made core look like a grab bag. What is left is the contract and the
+keyspaces every backend shares.

@@ -1,4 +1,4 @@
-// @bunker/core/sync.js
+// @bunker/utils/channel.js
 
 // cross-tab notification. BroadcastChannel where it exists (window, worker and
 // service worker alike), otherwise the localStorage `storage` event, which fires
@@ -57,3 +57,5 @@ export function createChannel (name) {
     },
   };
 }
+
+export default createChannel;

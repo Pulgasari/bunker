@@ -5,9 +5,9 @@ import {
   NO_KEYSPACE, 
   createKeyspace, 
   createMemoryDriver, 
-  createSingleFlight, 
   withKeyspace,
-} from './../core/index.js'; // from '@bunker/core';
+} from './../core/index.js';            // from '@bunker/core';
+import { createSingleFlight } from './../utils/singleFlight.js'; // from '@bunker/utils/singleFlight.js';
 
 // :::::: ENTRIES ::::::::::::::::::::::::::::::::::::::::::::::::
 

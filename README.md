@@ -14,12 +14,13 @@ the one property that decides what you can build on them:
 bunker gives each one a package, and keeps caching *policy* out of all of them.
 
 ```
-@bunker/core      driver contract, keyspaces, codecs, quota, cross-tab, single flight
+@bunker/core      driver contract, keyspaces, codecs
 @bunker/db        IndexedDB
 @bunker/storage   localStorage / sessionStorage, synchronous
 @bunker/cache     Cache API, window and service worker
 @bunker/policy    TTL and stale-while-revalidate over any driver
-@bunker/kit       the five above, pre-wired
+@bunker/utils     memoize, single flight, content hash, quota, cross-tab
+@bunker/kit       the six above, pre-wired
 ```
 
 Two of those names are worth being precise about: `@bunker/cache` is the *Cache API*,
@@ -29,15 +30,18 @@ is still good.
 
 ## Layering
 
-Every package depends on `@bunker/core` and on nothing else:
+```
+utils
+ └── core
+      ├── db       -> exports a driver
+      ├── storage  -> exports a driver
+      ├── cache    -> exports a driver
+      └── policy   -> takes a driver, knows none of them
+```
 
-```
-core
- ├── db       -> exports a driver
- ├── storage  -> exports a driver
- ├── cache    -> exports a driver
- └── policy   -> takes a driver, knows none of them
-```
+`@bunker/utils` is a leaf with no dependencies of its own: in-process helpers, nothing
+that survives a reload. Everything else depends on `@bunker/core` and on nothing but
+that and utils.
 
 `@bunker/policy` does not import `db`, `storage` or `cache`. Want an IndexedDB L2? Hand
 it that driver. This keeps `policy` usable on its own (memory only) and keeps the
@@ -53,6 +57,7 @@ wiring happens.
 - **`cache`** — anything with a URL: stylesheets, `woff2`, images, wasm. A service worker
   answers the real request from here, so the browser's own loading path is untouched.
 - **`policy`** — not a place to put things. Something you wrap around one of the above.
+- **`utils`** — the small in-process helpers the packages share. No I/O, nothing stored.
 
 ## Why the split matters: rendering without a flash
 
