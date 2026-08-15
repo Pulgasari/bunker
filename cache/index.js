@@ -207,11 +207,30 @@ export function createCache (options = {}) {
     };
   }
 
-  return {
+  const api = {
     name, driver, isSupported,
     clear, keys, match, open, put, staleWhileRevalidate,
     delete : remove,
   };
+
+  // lazy, because a Proxy costs nothing until someone actually wants the sugar
+  let proxy = null;
+  Object.defineProperty(api, 'proxy', { get: () => proxy ??= createProxy(api) });
+
+  return api;
+}
+
+// :::::: PROXY ::::::::::::::::::::::::::::::::::::::::::::::::::
+
+// cache.proxy['/app.css'] -> Promise<Response | null>  /  delete cache.proxy['/app.css']
+// kept off the cache object itself on purpose: a key named `keys` or `match` would
+// otherwise be shadowed by the method of the same name.
+export function createProxy (cache) {
+  return new Proxy(Object.create(null), {
+    get            : (_, key)        => typeof key === 'symbol' ? undefined : cache.match(key),
+    set            : (_, key, value) => { cache.put(key, value); return true; },
+    deleteProperty : (_, key)        => { cache.delete(key); return true; },
+  });
 }
 
 export const cache = createCache();

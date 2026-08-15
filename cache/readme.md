@@ -71,6 +71,17 @@ const policy = createPolicy({ driver: cache.driver() });
 JSON bodies under synthetic URLs, for when compiled output belongs in the Cache API
 rather than IndexedDB.
 
+## Key access
+
+```javascript
+const sheet = await cache.proxy['/app.css'];
+cache.proxy['/app.css'] = new Response(css, { headers: { 'content-type': 'text/css' } });
+delete cache.proxy['/app.css'];
+```
+
+Sugar over `match`, `put` and `delete`. It sits on `.proxy` rather than on the cache
+itself so a key named `keys` or `match` cannot be shadowed by the method.
+
 ## Degrading
 
 Where the Cache API is missing — an insecure context, a browser without it —

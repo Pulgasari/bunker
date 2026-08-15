@@ -59,7 +59,17 @@ export interface Cache {
    * the cache and only need to be stable and unique.
    */
   driver(options?: { origin?: string }): Driver;
+
+  /** `cache.proxy['/app.css']` reads, assigning puts, `delete` removes. */
+  readonly proxy: CacheProxy;
 }
+
+/** Key access over a cache. Reads answer a promise; there is no synchronous form. */
+export interface CacheProxy {
+  [key: string]: Promise<Response | null> | Response;
+}
+
+export declare function createProxy(cache: Cache): CacheProxy;
 
 export declare function createCache(options?: CacheOptions): Cache;
 

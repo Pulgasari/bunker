@@ -23,15 +23,15 @@ const SHEET = 'https://example.test/app.ass';
 {
   const routes = { [SHEET]: { body: 'aufbau-center: both;', etag: 'v1' } };
   const calls  = installFetch(routes);
-  const files  = createCache({ name: 'sheets-1' });
+  const cache  = createCache({ name: 'sheets-1' });
 
   const transform = (source) => source.replace('aufbau-center: both;', 'display:grid;place-items:center;');
-  const first = await files.staleWhileRevalidate(SHEET, { transform, type: 'text/css' });
+  const first = await cache.staleWhileRevalidate(SHEET, { transform, type: 'text/css' });
 
   assert.equal(await first.text(), 'display:grid;place-items:center;');
   assert.equal(calls.total, 1);
 
-  const stored = await files.match(SHEET);
+  const stored = await cache.match(SHEET);
   assert.equal(await stored.text(), 'display:grid;place-items:center;', 'the transformed body is what got stored');
   assert.equal(stored.headers.get('content-type'), 'text/css');
   assert.equal(stored.headers.get('x-bunker-source-etag'), 'v1', 'the source validator is kept for revalidation');
@@ -42,13 +42,13 @@ const SHEET = 'https://example.test/app.ass';
 {
   const routes = { [SHEET]: { body: 'a{}', etag: 'v1' } };
   const calls  = installFetch(routes);
-  const files  = createCache({ name: 'sheets-2' });
+  const cache  = createCache({ name: 'sheets-2' });
 
-  await files.staleWhileRevalidate(SHEET, { ttl: 60_000 });
+  await cache.staleWhileRevalidate(SHEET, { ttl: 60_000 });
   assert.equal(calls.total, 1);
 
-  await files.staleWhileRevalidate(SHEET, { ttl: 60_000 });
-  await files.staleWhileRevalidate(SHEET, { ttl: 60_000 });
+  await cache.staleWhileRevalidate(SHEET, { ttl: 60_000 });
+  await cache.staleWhileRevalidate(SHEET, { ttl: 60_000 });
   assert.equal(calls.total, 1, 'a response younger than ttl must not be revalidated');
 }
 
@@ -56,15 +56,15 @@ const SHEET = 'https://example.test/app.ass';
 {
   const routes = { [SHEET]: { body: 'old{}', etag: 'v1' } };
   const calls  = installFetch(routes);
-  const files  = createCache({ name: 'sheets-3' });
+  const cache  = createCache({ name: 'sheets-3' });
 
-  await files.staleWhileRevalidate(SHEET, { ttl: 20 });
+  await cache.staleWhileRevalidate(SHEET, { ttl: 20 });
   await sleep(30);
 
   routes[SHEET] = { body: 'new{}', etag: 'v2' };
 
   const swapped = [];
-  const served  = await files.staleWhileRevalidate(SHEET, {
+  const served  = await cache.staleWhileRevalidate(SHEET, {
     onRevalidate : (fresh) => swapped.push(fresh),
     ttl          : 20,
   });
@@ -72,26 +72,26 @@ const SHEET = 'https://example.test/app.ass';
   assert.equal(await served.text(), 'old{}', 'the stale copy is served without waiting');
   await waitFor(() => swapped.length === 1, { label: 'the background revalidation' });
   assert.equal(await swapped[0].text(), 'new{}', 'onRevalidate hands over the fresh response');
-  assert.equal(await (await files.match(SHEET)).text(), 'new{}', 'and the cache was updated');
+  assert.equal(await (await cache.match(SHEET)).text(), 'new{}', 'and the cache was updated');
 }
 
 // :::::: an unchanged source costs a 304 and keeps the stored body
 {
   const routes = { [SHEET]: { body: 'same{}', etag: 'v1' } };
   const calls  = installFetch(routes);
-  const files  = createCache({ name: 'sheets-4' });
+  const cache  = createCache({ name: 'sheets-4' });
 
-  await files.staleWhileRevalidate(SHEET, { ttl: 20 });
+  await cache.staleWhileRevalidate(SHEET, { ttl: 20 });
   await sleep(30);
 
   const swapped = [];
-  await files.staleWhileRevalidate(SHEET, { onRevalidate: (r) => swapped.push(r), ttl: 20 });
+  await cache.staleWhileRevalidate(SHEET, { onRevalidate: (r) => swapped.push(r), ttl: 20 });
 
   await waitFor(() => calls.notModified === 1, { label: 'the conditional request' });
   assert.equal(calls.conditional, 1, 'revalidation sends If-None-Match');
   await sleep(20);
   assert.equal(swapped.length, 0, 'a 304 is not a change, so no swap is announced');
-  assert.equal(await (await files.match(SHEET)).text(), 'same{}', 'the stored body survives');
+  assert.equal(await (await cache.match(SHEET)).text(), 'same{}', 'the stored body survives');
 }
 
 // :::::: a failing revalidation leaves the stale copy in place
@@ -99,29 +99,29 @@ const SHEET = 'https://example.test/app.ass';
   const routes = { [SHEET]: { body: 'cached{}', etag: 'v1' } };
   installFetch(routes);
   const errors = [];
-  const files  = createCache({ name: 'sheets-5', onError: e => errors.push(e.operation) });
+  const cache  = createCache({ name: 'sheets-5', onError: e => errors.push(e.operation) });
 
-  await files.staleWhileRevalidate(SHEET, { ttl: 20 });
+  await cache.staleWhileRevalidate(SHEET, { ttl: 20 });
   await sleep(30);
 
   delete routes[SHEET]; // now a 404
-  const served = await files.staleWhileRevalidate(SHEET, { ttl: 20 });
+  const served = await cache.staleWhileRevalidate(SHEET, { ttl: 20 });
 
   assert.equal(await served.text(), 'cached{}');
   await waitFor(() => errors.includes('revalidate'), { label: 'the failure report' });
-  assert.equal(await (await files.match(SHEET)).text(), 'cached{}', 'going offline must not blank the cache');
+  assert.equal(await (await cache.match(SHEET)).text(), 'cached{}', 'going offline must not blank the cache');
 }
 
 // :::::: concurrent misses collapse into one fetch
 {
   const routes = { [SHEET]: { body: 'x{}', etag: 'v1' } };
   const calls  = installFetch(routes);
-  const files  = createCache({ name: 'sheets-6' });
+  const cache  = createCache({ name: 'sheets-6' });
 
   await Promise.all([
-    files.staleWhileRevalidate(SHEET),
-    files.staleWhileRevalidate(SHEET),
-    files.staleWhileRevalidate(SHEET),
+    cache.staleWhileRevalidate(SHEET),
+    cache.staleWhileRevalidate(SHEET),
+    cache.staleWhileRevalidate(SHEET),
   ]);
   assert.equal(calls.total, 1, 'three concurrent misses must fetch once');
 }
@@ -129,8 +129,8 @@ const SHEET = 'https://example.test/app.ass';
 // :::::: driver contract over text bodies
 {
   installFetch({});
-  const files  = createCache({ name: 'sheets-7' });
-  const driver = files.driver();
+  const cache  = createCache({ name: 'sheets-7' });
+  const driver = cache.driver();
 
   assert.ok(isDriver(driver));
   await driver.set('css:app', { rules: 2 });
@@ -152,16 +152,29 @@ const SHEET = 'https://example.test/app.ass';
 
   const routes = { [SHEET]: { body: 'direct{}' } };
   const calls  = installFetch(routes);
-  const files  = createCache({ name: 'sheets-8' });
+  const cache  = createCache({ name: 'sheets-8' });
 
-  assert.equal(await files.match(SHEET), null);
-  assert.equal(await files.open(), null);
+  assert.equal(await cache.match(SHEET), null);
+  assert.equal(await cache.open(), null);
 
-  const served = await files.staleWhileRevalidate(SHEET);
+  const served = await cache.staleWhileRevalidate(SHEET);
   assert.equal(await served.text(), 'direct{}', 'without a cache it still fetches');
   assert.equal(calls.total, 1);
 
   globalThis.caches = saved;
+}
+
+// :::::: proxy sugar
+{
+  const cache = createCache({ name: 'sheets-9' });
+  const key   = 'https://example.test/proxied.css';
+
+  cache.proxy[key] = new Response('a{}');
+  await waitFor(async () => await cache.match(key), { label: 'the proxied put' });
+  assert.equal(await (await cache.proxy[key]).text(), 'a{}', 'proxy reads through match');
+
+  delete cache.proxy[key];
+  await waitFor(async () => (await cache.match(key)) === null, { label: 'the proxied delete' });
 }
 
 console.log('cache: all assertions passed');
