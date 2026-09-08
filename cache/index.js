@@ -159,8 +159,8 @@ export function createCache (options = {}) {
     event.waitUntil here — without it the worker may be killed the moment it has
     answered, and the refresh it started is lost.
   */
-  async function staleWhileRevalidate (request, options = {}, withDirtyFix = false) {
-    const { keepAlive = null, onRevalidate = null, transform = null, ttl = 0, type = null } = options;
+  async function staleWhileRevalidate (request, options = {}) {
+    const { keepAlive = null, onRevalidate = null, transform = null, ttl = 0, type = null, withDirtyFix = false } = options;
 
     const cached = await match(request);
     if (cached && ttl > 0 && ageOf(cached) < ttl) return cached;
