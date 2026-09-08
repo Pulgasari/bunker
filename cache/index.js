@@ -21,6 +21,18 @@ const SOURCE_MODIFIED = 'x-bunker-source-modified';
 const isSupported = ()        => typeof caches !== 'undefined';
 const urlOf       = (request) => typeof request === 'string' ? request : request.url;
 
+// a conditional revalidation attaches If-None-Match / If-Modified-Since, neither of which
+// is a cors-safelisted request header. adding them to a cross-origin request forces a
+// preflight that the asset hosts (code.pulgasari.dev, the icon api) do not answer, so
+// cross-origin revalidates with a plain simple GET instead. outside a browsing/worker
+// context (the node test run) there is no origin to compare against — treat that as
+// same-origin so the conditional still goes out.
+function sameOrigin (url) {
+  if (typeof self === 'undefined' || !self.location) return true;
+  try   { return new URL(url, self.location.href).origin === self.location.origin; }
+  catch { return true; }
+}
+
 // a stored response carries our stamp plus whatever validators the source had
 function stamp (response, body, { at = Date.now(), etag = null, modified = null, type = null } = {}) {
   const headers = new Headers(response.headers);
@@ -55,20 +67,26 @@ class BunkerCache {
 */
 
 export function createCache (options = {}) {
-  const { name = 'bunker', onError = null } = options;
+  const { name = 'bunker', onError = null, onSuccess = null } = options;
   const once = createSingleFlight();
-  const fail = (operation, key, error) => { onError?.({ error, key, operation }); };
+  const fail = (operation, key, error)         => { onError?.({ error, key, operation }); };
+  const done = (operation, key, detail = null) => { onSuccess?.({ detail, key, operation }); };
   let opened = null;
 
   function open () {
     if (!isSupported()) return Promise.resolve(null);
-    return opened ??= caches.open(name).catch(error => { fail('open', name, error); opened = null; return null; });
+    return opened ??= caches.open(name)
+      .then(cache  => { done('open', name); return cache; })
+      .catch(error => { fail('open', name, error); opened = null; return null; });
   }
 
   async function match (request) {
     const cache = await open(); if (!cache) return null;
-    try       { return (await cache.match(request)) ?? null; }
-    catch (e) { fail('match', urlOf(request), e); return null; }
+    try {
+      const hit = (await cache.match(request)) ?? null;
+      done('match', urlOf(request), { hit: hit !== null });
+      return hit;
+    } catch (e) { fail('match', urlOf(request), e); return null; }
   }
 
   async function put (request, response) {
@@ -76,42 +94,48 @@ export function createCache (options = {}) {
     // an opaque response has status 0 and cache.put() rejects on it outright
     if (response.type === 'opaque' || response.status === 0) return false;
 
-    try       { await cache.put(request, response); return true; }
-    catch (e) { fail('put', urlOf(request), e);     return false; }
+    try       { await cache.put(request, response); done('put', urlOf(request)); return true; }
+    catch (e) { fail('put', urlOf(request), e);                                  return false; }
   }
 
   async function remove (request) {
     const cache = await open(); if (!cache) return false;
-    try       { return await cache.delete(request); }
-    catch (e) { fail('delete', urlOf(request), e); return false; }
+    try {
+      const deleted = await cache.delete(request);
+      done('delete', urlOf(request), { deleted });
+      return deleted;
+    } catch (e) { fail('delete', urlOf(request), e); return false; }
   }
 
   async function keys () {
     const cache = await open(); if (!cache) return [];
-    try       { return await cache.keys(); }
-    catch (e) { fail('keys', null, e); return []; }
+    try {
+      const stored = await cache.keys();
+      done('keys', null, { count: stored.length });
+      return stored;
+    } catch (e) { fail('keys', null, e); return []; }
   }
 
   async function clear () {
     if (!isSupported()) return false;
     opened = null;
-    try       { return await caches.delete(name); }
-    catch (e) { fail('clear', name, e); return false; }
+    try {
+      const deleted = await caches.delete(name);
+      done('clear', name, { deleted });
+      return deleted;
+    } catch (e) { fail('clear', name, e); return false; }
   }
 
   // :::::: fetch + transform + store
 
-  // a conditional request, so an unchanged source costs a 304 and no body at all
-  function conditional (request, cached, withDirtyFix = false) {
+  // a conditional request, so an unchanged source costs a 304 and no body at all.
+  // cross-origin skips it: the validators are not cors-safelisted and would force a
+  // preflight the source host does not answer, so a plain GET revalidation is left instead.
+  function conditional (request, cached) {
     const etag     = cached?.headers.get(SOURCE_ETAG);
     const modified = cached?.headers.get(SOURCE_MODIFIED);
-    if (!etag && !modified) return request;
-
-    if (withDirtyFix === true) {
-      const url = urlOf(request);
-      const isCrossOrigin = new URL(url, self.location.href).origin !== self.location.origin;
-      if (isCrossOrigin) return request; // Do not attach conditional headers on cross-origin requests to prevent preflights
-    }
+    if (!etag && !modified)          return request;
+    if (!sameOrigin(urlOf(request))) return request;
 
     try {
       const headers = new Headers(request instanceof Request ? request.headers : undefined);
@@ -160,13 +184,13 @@ export function createCache (options = {}) {
     answered, and the refresh it started is lost.
   */
   async function staleWhileRevalidate (request, options = {}) {
-    const { keepAlive = null, onRevalidate = null, transform = null, ttl = 0, type = null, withDirtyFix = false } = options;
+    const { keepAlive = null, onRevalidate = null, transform = null, ttl = 0, type = null } = options;
 
     const cached = await match(request);
     if (cached && ttl > 0 && ageOf(cached) < ttl) return cached;
 
     const revalidate = () => once(urlOf(request), async () => {
-      const response = await fetch(conditional(request, cached, withDirtyFix));
+      const response = await fetch(conditional(request, cached));
 
       // unchanged: keep the stored body, just refresh its age. re-read from the
       // cache rather than reusing `cached`, whose body the caller may already be
@@ -179,11 +203,14 @@ export function createCache (options = {}) {
             modified : stored.headers.get(SOURCE_MODIFIED),
           }));
         }
+        done('revalidate', urlOf(request), { notModified: true, status: 304 });
         return null;
       }
 
       if (!response.ok) throw new Error(`[bunker] ${response.status} ${response.statusText} for ${urlOf(request)}`);
-      return store(request, response, transform, type);
+      const stored = await store(request, response, transform, type);
+      done('revalidate', urlOf(request), { notModified: false, status: response.status });
+      return stored;
     });
 
     if (cached) {

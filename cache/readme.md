@@ -43,6 +43,10 @@ revalidation needs to ask about.
 So an unchanged file costs a 304 and no body at all, and `onRevalidate` stays quiet —
 a 304 is not a change.
 
+Cross-origin revalidation skips the conditional headers. `If-None-Match` and
+`If-Modified-Since` are not CORS-safelisted, so attaching them would force a preflight
+most asset hosts do not answer; those revalidate with a plain GET instead.
+
 ```javascript
 await cache.staleWhileRevalidate(request, {
   ttl          : 60_000,                    // younger than this: no network at all
@@ -55,6 +59,22 @@ A failing revalidation is reported through `onError` and leaves the cached copy 
 place. Going offline must not blank the page.
 
 Concurrent requests for one URL collapse into a single fetch.
+
+## Logging
+
+`onError` reports a failed operation; `onSuccess` is its counterpart and reports a
+successful one, so hit rate and revalidation outcomes can be logged.
+
+```javascript
+const cache = createCache({
+  name      : 'sheets',
+  onError   : ({ operation, key, error })  => console.warn('[cache]', operation, key, error),
+  onSuccess : ({ operation, key, detail }) => console.debug('[cache]', operation, key, detail),
+});
+```
+
+Both carry `{ operation, key }`; the success also carries an operation-specific `detail`
+— `{ hit }` on `match`, `{ status, notModified }` on `revalidate`, and so on.
 
 ## Metadata
 
