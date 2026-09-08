@@ -107,7 +107,7 @@ export function createCache (options = {}) {
     const modified = cached?.headers.get(SOURCE_MODIFIED);
     if (!etag && !modified) return request;
 
-    if (withDirtyFix === true)
+    if (withDirtyFix === true) {
       const url = urlOf(request);
       const isCrossOrigin = new URL(url, self.location.href).origin !== self.location.origin;
       if (isCrossOrigin) return request; // Do not attach conditional headers on cross-origin requests to prevent preflights
