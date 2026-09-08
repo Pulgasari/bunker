@@ -2,16 +2,31 @@
 
 import type { Driver } from '@bunker/core';
 
+export type CacheOperation = 'clear' | 'delete' | 'keys' | 'match' | 'open' | 'put' | 'revalidate';
+
 export interface CacheError {
   error: unknown;
   key: string | null;
-  operation: 'clear' | 'delete' | 'keys' | 'match' | 'open' | 'put' | 'revalidate';
+  operation: CacheOperation;
+}
+
+export interface CacheSuccess {
+  /**
+   * Operation-specific extra: `{ hit }` for `match`, `{ deleted }` for `delete`/`clear`,
+   * `{ count }` for `keys`, `{ status, notModified }` for `revalidate`.
+   */
+  detail?: { count?: number; deleted?: boolean; hit?: boolean; notModified?: boolean; status?: number } | null;
+  key: string | null;
+  operation: CacheOperation;
 }
 
 export interface CacheOptions {
   /** Cache name passed to `caches.open()`. Defaults to `bunker`. */
   name?: string;
+  /** Called when a cache operation fails. */
   onError?: (error: CacheError) => void;
+  /** The counterpart to `onError`: called when an operation succeeds, for logging hit rate and revalidation outcomes. */
+  onSuccess?: (success: CacheSuccess) => void;
 }
 
 export type Transform = (
