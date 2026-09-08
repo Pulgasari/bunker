@@ -40,6 +40,20 @@ const ageOf = (response) => {
 
 // :::::: FILES ::::::::::::::::::::::::::::::::::::::::::::::::::
 
+/*
+class BunkerCache {
+  name    = 'bunker';
+  onError = null;
+
+  constructor (options = {}) {
+    this.name    = options.name    ?? 'bunker';
+    this.onError = options.onError ?? null;
+  }
+
+  #fail = (operation, key, error) => { this.onError?.({ error, key, operation }); };
+}
+*/
+
 export function createCache (options = {}) {
   const { name = 'bunker', onError = null } = options;
   const once = createSingleFlight();
@@ -59,12 +73,11 @@ export function createCache (options = {}) {
 
   async function put (request, response) {
     const cache = await open(); if (!cache) return false;
-
     // an opaque response has status 0 and cache.put() rejects on it outright
     if (response.type === 'opaque' || response.status === 0) return false;
 
     try       { await cache.put(request, response); return true; }
-    catch (e) { fail('put', urlOf(request), e); return false; }
+    catch (e) { fail('put', urlOf(request), e);     return false; }
   }
 
   async function remove (request) {
@@ -113,8 +126,7 @@ export function createCache (options = {}) {
       type,
     };
 
-    if (!transform) {
-      // keep one copy for the cache and hand the other back, a body reads once
+    if (!transform) { // keep one copy for the cache and hand the other back, a body reads once
       const stored = stamp(response, await response.clone().arrayBuffer(), meta);
       await put(request, stored.clone());
       return stored;
@@ -231,7 +243,7 @@ export function createCache (options = {}) {
 // cache.proxy['/app.css'] -> Promise<Response | null>  /  delete cache.proxy['/app.css']
 // kept off the cache object itself on purpose: a key named `keys` or `match` would
 // otherwise be shadowed by the method of the same name.
-export function createProxy (cache) {
+function createProxy (cache) {
   return new Proxy(Object.create(null), {
     get            : (_, key)        => typeof key === 'symbol' ? undefined : cache.match(key),
     set            : (_, key, value) => { cache.put(key, value); return true; },
@@ -240,4 +252,11 @@ export function createProxy (cache) {
 }
 
 export const cache = createCache();
+
+// :::::: EXPORT :::::::::::::::::::::::::::::::::::::::::::::::::
+
+export {
+  createProxy,
+};
+
 export default createCache;
