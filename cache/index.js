@@ -102,10 +102,16 @@ export function createCache (options = {}) {
   // :::::: fetch + transform + store
 
   // a conditional request, so an unchanged source costs a 304 and no body at all
-  function conditional (request, cached) {
+  function conditional (request, cached, withDirtyFix = false) {
     const etag     = cached?.headers.get(SOURCE_ETAG);
     const modified = cached?.headers.get(SOURCE_MODIFIED);
     if (!etag && !modified) return request;
+
+    if (withDirtyFix === true)
+      const url = urlOf(request);
+      const isCrossOrigin = new URL(url, self.location.href).origin !== self.location.origin;
+      if (isCrossOrigin) return request; // Do not attach conditional headers on cross-origin requests to prevent preflights
+    }
 
     try {
       const headers = new Headers(request instanceof Request ? request.headers : undefined);
@@ -153,14 +159,14 @@ export function createCache (options = {}) {
     event.waitUntil here — without it the worker may be killed the moment it has
     answered, and the refresh it started is lost.
   */
-  async function staleWhileRevalidate (request, options = {}) {
+  async function staleWhileRevalidate (request, options = {}, withDirtyFix = false) {
     const { keepAlive = null, onRevalidate = null, transform = null, ttl = 0, type = null } = options;
 
     const cached = await match(request);
     if (cached && ttl > 0 && ageOf(cached) < ttl) return cached;
 
     const revalidate = () => once(urlOf(request), async () => {
-      const response = await fetch(conditional(request, cached));
+      const response = await fetch(conditional(request, cached, withDirtyFix));
 
       // unchanged: keep the stored body, just refresh its age. re-read from the
       // cache rather than reusing `cached`, whose body the caller may already be
