@@ -2,24 +2,37 @@
 // @ts-self-types="./index.d.ts"
 
 /*
-  naming inside the idb plumbing, kept short because it repeats constantly:
-    rq = request      tx = transaction     os = objectStore
+naming inside the idb plumbing, kept short because it repeats constantly:
+- os = objectStore
+- rq = request
+- tx = transaction
+
+RANGE_END:
+highest code unit, the upper bound of a prefix range scan. 
+keys are strings and indexeddb sorts them lexicographically, 
+so a prefix scan is a plain bound range and needs no separate index.
+
+TABLE_API:
+every method reachable as db.<table>.<method>(). 
+anything not listed here is read as a key,
+so a method left out would silently turn into a lookup.
 */
 
-// highest code unit, the upper bound of a prefix range scan. keys are strings and
-// indexeddb sorts them lexicographically, so a prefix scan is a plain bound range
-// and needs no separate index.
-const RANGE_END = '￿';
+// :::::: CONSTANTS
 
-// every method reachable as db.<table>.<method>(). anything not listed here is read
-// as a key, so a method left out would silently turn into a lookup.
-const TABLE_API = [
-  'clear', 'count', 'delete', 'entries', 'find', 'get', 'getAll', 'has', 'keys', 'set', 'toggle',
-];
+const RANGE_END = '￿';
+const TABLE_API = ['clear', 'count', 'delete', 'entries', 'find', 'get', 'getAll', 'has', 'keys', 'set', 'toggle'];
+
+// :::::: HELPERS
+
+// :::::: MAIN
 
 export class BunkerDB {
 
-  #db = null; #dbName; #queue = Promise.resolve(); #tables = new Set;
+  #db = null; 
+  #dbName; 
+  #queue  = Promise.resolve(); 
+  #tables = new Set;
 
   static isSupported () { return typeof indexedDB !== 'undefined'; }
 
@@ -52,7 +65,7 @@ export class BunkerDB {
   // serializes every connection change, so two callers cannot race into
   // overlapping open/upgrade cycles.
   #lock (fn) {
-    const run = this.#queue.then(fn, fn);
+    const run   = this.#queue.then(fn, fn);
     this.#queue = run.catch(() => {});
     return run;
   }
@@ -103,7 +116,7 @@ export class BunkerDB {
     }, { drop: () => this.dropTable(table) });
 
     return new Proxy(api, {
-      get : (target, key) => key in target ? target[key] : this.get(table, key),
+      get : (target, key)        => key in target ? target[key] : this.get(table, key),
       set : (target, key, value) => { this.set(table, key, value); return true; },
     });
   }
@@ -122,7 +135,7 @@ export class BunkerDB {
   async task (table, mode, callback) {
     const db = await this.#getDB(table);
 
-    return new Promise((resolve, reject) => {
+    return new Promise ((resolve, reject) => {
       let   value   = undefined;
       const tx      = db.transaction(table, mode);
       const collect = result => value = result;
@@ -263,11 +276,11 @@ export class BunkerDB {
     return {
       name   : `indexeddb:${this.#dbName}/${table}`,
       sync   : false,
-      clear  : ()            => this.clear(table),
-      delete : (key)         => this.delete(table, key),
-      get    : (key)         => this.get(table, key),
-      keys   : (prefix = '') => this.keys(table, prefix),
-      set    : (key, value)  => this.set(table, key, value),
+      clear  : ()            => this.clear  (table),
+      delete : (key)         => this.delete (table, key),
+      get    : (key)         => this.get    (table, key),
+      keys   : (prefix = '') => this.keys   (table, prefix),
+      set    : (key, value)  => this.set    (table, key, value),
     };
   }
 }
@@ -277,5 +290,10 @@ export function createDb (dbName) { return new BunkerDB(dbName); }
 export function createDbDriver ({ name = 'bunker', table = 'kv' } = {}) {
   return createDb(name).driver(table);
 }
+
+// :::::: EXPORT
+
+export const 
+createDB = (name) => new BunkerDB(name);
 
 export default BunkerDB;
