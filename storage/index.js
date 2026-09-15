@@ -7,12 +7,13 @@ const PROBE = '__bunker_probe__';
 
 // :::::: AREA :::::::::::::::::::::::::::::::::::::::::::::::::::
 
-// the web storage surface we actually use, so the memory fallback can stand in
-// for it without anything above noticing.
+// the web storage surface we actually use,
+// so the memory fallback can stand in for it without anything above noticing.
 
-// one map per area, shared by every instance of it. two stores over the same area
-// see each other's keys through real web storage, and the fallback has to behave
-// the same way or namespacing and sweeping quietly stop working without it.
+// one map per area, shared by every instance of it. 
+// two stores over the same area see each other's keys through real web storage,
+// and the fallback has to behave the same way 
+// or namespacing and sweeping quietly stop working without it.
 const memoryAreas = new Map;
 
 function createMemoryArea (area) {
@@ -29,15 +30,15 @@ function createMemoryArea (area) {
   };
 }
 
-// safari in private mode used to hand out a working localStorage that threw on
-// every write, so presence is not enough — the write has to be probed.
+// safari in private mode used to hand out a working localStorage that threw on every write, 
+// so presence is not enough — the write has to be probed.
 function resolveArea (area) {
   try {
     const native = area === 'session' ? globalThis.sessionStorage : globalThis.localStorage;
     if (!native) return createMemoryArea(area);
 
-    native.setItem(PROBE, '1');
-    native.removeItem(PROBE);
+    native.setItem    (PROBE, '1');
+    native.removeItem (PROBE);
 
     return {
       persistent : true,
@@ -55,7 +56,7 @@ function resolveArea (area) {
 
 // :::::: STORAGE ::::::::::::::::::::::::::::::::::::::::::::::::
 
-export function createStorage (options = {}) {
+function createStorage (options = {}) {
   const {
     area      = 'local',
     codec     = codecs.json,
@@ -70,9 +71,9 @@ export function createStorage (options = {}) {
   const fail      = (operation, key, error) => { onError?.({ error, key, operation }); };
   const emit      = (change)                => { for (const listener of listeners) listener(change); };
 
-  // the native storage event fires in every *other* tab of the origin, and only
-  // for localStorage. our own writes are emitted separately, so a single subscribe()
-  // sees both without the caller caring which tab moved.
+  // the native storage event fires in every *other* tab of the origin,
+  // and only for localStorage. our own writes are emitted separately,
+  // so a single subscribe() sees both without the caller caring which tab moved.
   const onStorageEvent = (event) => {
     if (event.storageArea && event.storageArea !== globalThis.localStorage) return;
     if (event.key === null) return emit({ key: null, source: 'remote', value: null });
@@ -210,8 +211,8 @@ export function createStorage (options = {}) {
 // store.proxy.theme = 'oled'  /  delete store.proxy.theme  /  'theme' in store.proxy
 // kept off the storage object itself on purpose: a key named `get` or `keys` would
 // otherwise be shadowed by the method of the same name.
-export function createProxy (storage) {
-  return new Proxy(Object.create(null), {
+function createProxy (storage) {
+  return new Proxy (Object.create(null), {
     get            : (_, key)        => typeof key === 'symbol' ? undefined : storage.getSync(key),
     set            : (_, key, value) => { storage.setSync(key, value); return true; },
     has            : (_, key)        => typeof key !== 'symbol' && storage.hasSync(key),
@@ -228,4 +229,5 @@ export const
 local   = createStorage({ area: 'local'   }),
 session = createStorage({ area: 'session' });
 
+export { createProxy, createStorage };
 export default local;
