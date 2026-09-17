@@ -285,15 +285,11 @@ export class BunkerDB {
   }
 }
 
-export function createDb (dbName) { return new BunkerDB(dbName); }
-
-export function createDbDriver ({ name = 'bunker', table = 'kv' } = {}) {
-  return createDb(name).driver(table);
-}
-
 // :::::: EXPORT
 
-export const 
-createDB = (name) => new BunkerDB(name);
+export const
+createDb = (name) => new BunkerDB (name),
+createDB = (name) => new BunkerDB (name),
+createDbDriver = ({ name = 'bunker', table = 'kv' } = {}) => createDB(name).driver(table);
 
 export default BunkerDB;
