@@ -193,20 +193,24 @@ export class BunkerDB {
     return this.#lock(async () => {
       await this.#connect();
       if (!this.#tables.has(table)) return this.#db;
-      return this.#open(this.#db.version + 1, (db) => db.deleteObjectStore(table));
+      const db = await this.#open(this.#db.version + 1, (db) => db.deleteObjectStore(table));
+      this.#emit({ table, type: 'drop' });
+      return db;
     });
   }
 
   close () {
     this.#db?.close();
     this.#db = null;
+    this.#channel?.close();
+    this.#channel = undefined; // re-armed by the next emit or listener
   }
 
   async destroy () {
     this.close();
     return this.#lock(() => new Promise ((resolve, reject) => {
       const request = indexedDB.deleteDatabase(this.#dbName);
-      request.onsuccess = () => { this.#tables = new Set; resolve(true); };
+      request.onsuccess = () => { this.#tables = new Set; this.#emit({ table: null, type: 'destroy' }); resolve(true); };
       request.onerror   = () => reject(request.error);
       request.onblocked = () => reject(new Error(`[bunker] "${this.#dbName}": delete blocked by another connection`));
     }));
