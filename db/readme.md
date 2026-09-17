@@ -29,12 +29,16 @@ await db.users.bob; // any unknown property reads as a key
 db.users.bob = { role: 'guest' };
 ```
 
+### drop
+
 ```javascript
-await db.users.get('ada');
-await db.users.ada;              // any unknown property reads as a key
-db.users.bob = { role: 'guest' }; // fire and forget
-await db.users.keys('admin:');
 await db.users.drop();
+```
+
+### keys
+
+```javascript
+await db.users.keys('admin:');
 ```
 
 ## Prefix scans
