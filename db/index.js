@@ -25,6 +25,9 @@ const TABLE_API = ['clear', 'count', 'delete', 'entries', 'find', 'get', 'getAll
 
 // :::::: HELPERS
 
+const isFn     = sth => typeof sth === 'function';
+const isSymbol = sth => typeof sth === 'symbol';
+
 // :::::: MAIN
 
 export class BunkerDB {
@@ -79,19 +82,16 @@ export class BunkerDB {
 
   // version=null opens at whatever version is on disk, which is the no-upgrade path.
   #open (version = null, upgrade = null) {
-    if (!BunkerDB.isSupported()) {
-      return Promise.reject(new Error(`[bunker] indexedDB is unavailable, cannot open "${this.#dbName}"`));
-    }
-
+    if (!BunkerDB.isSupported()) return Promise.reject(new Error(`[bunker] indexedDB is unavailable, cannot open "${this.#dbName}"`));    
     if (this.#db) { this.#db.close(); this.#db = null; }
 
-    return new Promise((resolve, reject) => {
-      const rq = version ? indexedDB.open(this.#dbName, version) : indexedDB.open(this.#dbName);
+    return new Promise ((resolve, reject) => {
+      const request = version ? indexedDB.open(this.#dbName, version) : indexedDB.open(this.#dbName);
 
-      rq.onupgradeneeded = (event) => upgrade?.(event.target.result, rq.transaction);
-      rq.onsuccess       = ()      => resolve(this.#db = this.#syncTables(rq.result));
-      rq.onerror         = ()      => reject(rq.error);
-      rq.onblocked       = ()      => reject(new Error(`[bunker] "${this.#dbName}": upgrade blocked by another connection`));
+      request.onupgradeneeded = (event) => upgrade?.(event.target.result, request.transaction);
+      request.onsuccess       = ()      => resolve(this.#db = this.#syncTables(request.result));
+      request.onerror         = ()      => reject(request.error);
+      request.onblocked       = ()      => reject(new Error(`[bunker] "${this.#dbName}": upgrade blocked by another connection`));
     });
   }
 
@@ -122,16 +122,7 @@ export class BunkerDB {
   }
 
   // :::::: ENGINE ::::::::::::::::::::::::::::::::::::::::::::::
-
-  /*
-    the callback gets (objectStore, collect, reject). it either returns an
-    IDBRequest, whose result is collected automatically, or calls collect() itself
-    for cursor walks.
-
-    settlement waits for tx.oncomplete rather than the request's onsuccess: in a
-    readwrite transaction the request succeeds before the transaction commits, so
-    resolving early would report a write as done that a later abort still undoes.
-  */
+  
   async task (table, mode, callback) {
     const db = await this.#getDB(table);
 
@@ -140,10 +131,10 @@ export class BunkerDB {
       const tx      = db.transaction(table, mode);
       const collect = result => value = result;
 
-      const rq = callback(tx.objectStore(table), collect, reject);
-      if (rq instanceof IDBRequest) {
-        rq.onsuccess = () => collect (rq.result);
-        rq.onerror   = () => reject  (rq.error);
+      const request = callback(tx.objectStore(table), collect, reject);
+      if (request instanceof IDBRequest) {
+        request.onsuccess = () => collect (request.result);
+        request.onerror   = () => reject  (request.error);
       }
 
       tx.oncomplete = () => resolve(value);
@@ -201,11 +192,11 @@ export class BunkerDB {
 
   async destroy () {
     this.close();
-    return this.#lock(() => new Promise((resolve, reject) => {
-      const rq = indexedDB.deleteDatabase(this.#dbName);
-      rq.onsuccess = () => { this.#tables = new Set; resolve(true); };
-      rq.onerror   = () => reject(rq.error);
-      rq.onblocked = () => reject(new Error(`[bunker] "${this.#dbName}": delete blocked by another connection`));
+    return this.#lock(() => new Promise ((resolve, reject) => {
+      const request = indexedDB.deleteDatabase(this.#dbName);
+      request.onsuccess = () => { this.#tables = new Set; resolve(true); };
+      request.onerror   = () => reject(request.error);
+      request.onblocked = () => reject(new Error(`[bunker] "${this.#dbName}": delete blocked by another connection`));
     }));
   }
 
@@ -216,9 +207,7 @@ export class BunkerDB {
   async delete (table, key)    { await this.task(table, 'readwrite', os => os.delete(key)); }
   async has    (table, key)    { return (await this.count(table, key)) > 0; }
   async set    (table, key, v) { await this.task(table, 'readwrite', os => os.put(v, key)); }
-
-  // idb answers a miss with undefined, the driver contract wants null
-  async get (table, key) { return (await this.task(table, 'readonly', os => os.get(key))) ?? null; }
+  async get    (table, key)    { return (await this.task(table, 'readonly', os => os.get(key))) ?? null; }
 
   async keys (table, prefix = '') {
     const range = prefix ? IDBKeyRange.bound(prefix, prefix + RANGE_END) : undefined;
@@ -229,15 +218,18 @@ export class BunkerDB {
     const range = prefix ? IDBKeyRange.bound(prefix, prefix + RANGE_END) : undefined;
 
     return this.task(table, 'readonly', (os, collect, reject) => {
-      const rq  = os.openCursor(range);
-      const out = [];
+      const request = os.openCursor(range);
+      const out     = [];
 
-      rq.onsuccess = (event) => {
+      request.onsuccess = (event) => {
         const cursor = event.target.result;
-        if (cursor) { out.push([cursor.key, cursor.value]); cursor.continue(); }
+        if (cursor) {
+          out.push([cursor.key, cursor.value]); 
+          cursor.continue();
+        }
         else collect(out);
       };
-      rq.onerror = () => reject(rq.error);
+      request.onerror = () => reject(request.error);
     });
   }
 
@@ -247,9 +239,9 @@ export class BunkerDB {
 
   async find (table, index, value) {
     return this.task(table, 'readonly', (os, collect, reject) => {
-      const rq = os.index(index).getAll(value);
-      rq.onsuccess = () => collect(rq.result);
-      rq.onerror   = () => reject(rq.error);
+      const request = os.index(index).getAll(value);
+      request.onsuccess = () => collect (request.result);
+      request.onerror   = () => reject  (request.error);
     });
   }
 
