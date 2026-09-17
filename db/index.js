@@ -294,21 +294,24 @@ export class BunkerDB {
       request.onerror   = () => reject  (request.error);
     });
   }
-
+  
   // reads and writes in one transaction, so two tabs cannot interleave between them
   async toggle (table, key) {
-    return this.task(table, 'readwrite', (os, collect, reject) => {
+    const next = await this.task(table, 'readwrite', (os, collect, reject) => {
       const read = os.get(key);
 
       read.onsuccess = () => {
-        const next  = !read.result;
-        const write = os.put(next, key);
-        write.onsuccess = () => collect(next);
+        const value = !read.result;
+        const write = os.put(value, key);
+        write.onsuccess = () => collect(value);
         write.onerror   = () => reject(write.error);
       };
       read.onerror = () => reject(read.error);
     });
-  }
+
+    this.#emit({ table, type: 'set', key });
+    return next;
+  }3
 
   // :::::: REACTIVE :::::::::::::::::::::::::::::::::::::::::::::::
 
