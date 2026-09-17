@@ -3,9 +3,9 @@
 IndexedDB without the ceremony. Tables appear when you touch them.
 
 ```javascript
-import { createDb } from '@bunker/db';
+import { createDB } from '@bunker/db';
 
-const db = createDb('myapp');
+const db = createDB('myapp');
 
 await db.set('users', 'ada', { role: 'admin' });
 await db.get('users', 'ada');       // { role: 'admin' }
