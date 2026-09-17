@@ -14,7 +14,7 @@ await db.get('users', 'ada');       // { role: 'admin' }
 await db.get('users', 'nobody');    // null
 ```
 
-## Proxy tables
+## sugar shape of api (by proxyfied tables)
 
 ```javascript
 await db.users.get('ada');
