@@ -46,6 +46,8 @@ export class BunkerDB {
   #dbName; 
   #queue  = Promise.resolve(); 
   #tables = new Set;
+  #channel;             // undefined = not armed yet, null = no broadcastchannel in this runtime
+  #listeners = new Set; // [table|null, handler] tuples, the tuple is the unsubscribe identity
 
   static isSupported () { return typeof indexedDB !== 'undefined'; }
 
@@ -210,13 +212,38 @@ export class BunkerDB {
     }));
   }
 
+  #scan (table, criteria, limit = Infinity) {
+    return this.task(table, 'readonly', (os, collect, reject) => {
+      const indexed = Object.keys(criteria).find(key => os.indexNames.contains(key));
+      const request = indexed
+        ? os.index(indexed).openCursor(IDBKeyRange.only(criteria[indexed]))
+        : os.openCursor();
+
+      const out = [];
+
+      request.onsuccess = (event) => {
+        const cursor = event.target.result;
+        if (!cursor) return collect(out);
+
+        // primaryKey is the record key for index and object store cursors alike
+        if (matches(cursor.value, criteria)) out.push([cursor.primaryKey, cursor.value]);
+        if (out.length >= limit) return collect(out);
+        cursor.continue();
+      };
+      request.onerror = () => reject(request.error);
+    });
+  }
+
   // :::::: OPERATIONS ::::::::::::::::::::::::::::::::::::::::::
 
-  async clear  (...tables)     { for (const table of tables) await this.task(table, 'readwrite', os => os.clear()); }
+  // mutate
+  async clear  (...tables)     { for (const table of tables) { await this.task(table, 'readwrite', os => os.clear()); this.#emit({ table, type: 'clear' }); } }
+  async delete (table, key)    { await this.task(table, 'readwrite', os => os.delete(key)); this.#emit({ table, type: 'delete', key }); }
+  async set    (table, key, v) { await this.task(table, 'readwrite', os => os.put(v, key)); this.#emit({ table, type: 'set', key }); }
+
+  //
   async count  (table, range)  { return this.task(table, 'readonly',  os => os.count(range)); }
-  async delete (table, key)    { await this.task(table, 'readwrite', os => os.delete(key)); }
   async has    (table, key)    { return (await this.count(table, key)) > 0; }
-  async set    (table, key, v) { await this.task(table, 'readwrite', os => os.put(v, key)); }
 //async get    (table, key)    { return (await this.task(table, 'readonly', os => os.get(key))) ?? null; }
 
   async getByKey         (table, key)           { return (await this.task(table, 'readonly', os => os.get(key))) ?? null; }
@@ -281,6 +308,45 @@ export class BunkerDB {
       };
       read.onerror = () => reject(read.error);
     });
+  }
+
+  // :::::: REACTIVE :::::::::::::::::::::::::::::::::::::::::::::::
+
+  // armed on demand: no channel while nobody writes or listens.
+  #bus () {
+    if (this.#channel !== undefined) return this.#channel;
+
+    this.#channel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel(`bunker:${this.#dbName}`) : null;
+    if (this.#channel) this.#channel.onmessage = (event) => this.#notify(event.data);
+    return this.#channel;
+  }
+
+  // handlers run in a microtask, so a throwing handler cannot reject the write
+  // that triggered it and cannot swallow its siblings.
+  #notify (change) {
+    for (const [table, handler] of this.#listeners) {
+      if (!table || table === change.table) queueMicrotask(() => handler(change));
+    }
+  }
+
+  // payload stays small on purpose: no value is shipped, handlers re-read what they need. 
+  // keeps cross-tab traffic cheap and local/remote events identical.
+  #emit (change) {
+    this.#notify(change);
+    this.#bus()?.postMessage(change);
+  }
+
+  // onChange(handler) listens on every table, onChange(table, handler) on one.
+  // change = { table, type: 'set'|'delete'|'clear'|'drop'|'destroy', key? }
+  // returns the unsubscribe.
+  onChange (table, handler) {
+    if (isFn(table)) [table, handler] = [null, table];
+    if (!isFn(handler)) throw new TypeError('[bunker] onChange expects a handler function');
+
+    const entry = [table, handler];
+    this.#listeners.add(entry);
+    this.#bus(); // arm now, otherwise remote changes are missed until the first local write
+    return () => this.#listeners.delete(entry);
   }
 
   // :::::: DRIVER :::::::::::::::::::::::::::::::::::::::::::::::
