@@ -1,6 +1,8 @@
 # @bunker/db
 
-IndexedDB without the ceremony. Tables appear when you touch them.
+IndexedDB without the ceremony. tables appear when you touch them.
+
+## base shape of api
 
 ```javascript
 import { createDB } from '@bunker/db';
