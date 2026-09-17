@@ -26,7 +26,17 @@ const TABLE_API = ['clear', 'count', 'delete', 'entries', 'find', 'get', 'getAll
 // :::::: HELPERS
 
 const isFn     = sth => typeof sth === 'function';
+const isRecord = sth => typeof sth === 'object';
+const isString = sth => typeof sth === 'string';
 const isSymbol = sth => typeof sth === 'symbol';
+
+// strict equality on every criteria key. non-objects can never match, so
+// primitives stored next to records are skipped instead of throwing.
+const matchesCriteria = (value, criteria) => {
+  if (!value || typeof value !== 'object') return false;
+  for (const [key, expected] of Object.entries(criteria)) if (value[key] !== expected) return false;
+  return true;
+};
 
 // :::::: MAIN
 
@@ -207,8 +217,25 @@ export class BunkerDB {
   async delete (table, key)    { await this.task(table, 'readwrite', os => os.delete(key)); }
   async has    (table, key)    { return (await this.count(table, key)) > 0; }
   async set    (table, key, v) { await this.task(table, 'readwrite', os => os.put(v, key)); }
-  async get    (table, key)    { return (await this.task(table, 'readonly', os => os.get(key))) ?? null; }
+//async get    (table, key)    { return (await this.task(table, 'readonly', os => os.get(key))) ?? null; }
 
+  async getByKey         (table, key)           { return (await this.task(table, 'readonly', os => os.get(key))) ?? null; }
+  async getByCriteria    (table, criteria = {}) { const [hit] = await this.#scan(table, criteria, 1); return hit?.[1] ?? null; }
+  async get (table, spec) {
+    if (isString(spec)) return this.getByKey      (table, spec);
+    if (isRecord(spec)) return this.getByCriteria (table, spec);
+    return null;
+  }
+
+  async getAllByCriteria (table, criteria = {}) { return (await this.#scan(table, criteria)).map(([, value]) => value); }
+  async getAllByPrefix   (table, prefix   = '') { return Object.fromEntries(await this.entries(table, prefix)); }
+
+  async getAll (table, spec) {
+    if (isString(spec)) return this.getAllByPrefix   (table, spec);
+    if (isRecord(spec)) return this.getAllByCriteria (table, spec);
+    return Object.fromEntries(await this.entries(table));
+  }
+    
   async keys (table, prefix = '') {
     const range = prefix ? IDBKeyRange.bound(prefix, prefix + RANGE_END) : undefined;
     return (await this.task(table, 'readonly', os => os.getAllKeys(range))) ?? [];
@@ -231,10 +258,6 @@ export class BunkerDB {
       };
       request.onerror = () => reject(request.error);
     });
-  }
-
-  async getAll (table, prefix = '') {
-    return Object.fromEntries(await this.entries(table, prefix));
   }
 
   async find (table, index, value) {
