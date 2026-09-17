@@ -21,7 +21,7 @@ so a method left out would silently turn into a lookup.
 // :::::: CONSTANTS
 
 const RANGE_END = '￿';
-const TABLE_API = ['clear', 'count', 'delete', 'entries', 'find', 'get', 'getAll', 'has', 'keys', 'set', 'toggle'];
+const TABLE_API = ['clear', 'count', 'delete', 'entries', 'find', 'get', 'getAll', 'getAllByCriteria', 'getByCriteria', 'has', 'keys', 'onChange', 'set', 'toggle'];       
 
 // :::::: HELPERS
 
