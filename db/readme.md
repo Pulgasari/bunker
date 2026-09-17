@@ -16,6 +16,19 @@ await db.get('users', 'nobody');    // null
 
 ## sugar shape of api (by proxyfied tables)
 
+### get
+
+```javascript
+await db.users.get('bob');
+await db.users.bob; // any unknown property reads as a key
+```
+
+### set
+
+```javascript
+db.users.bob = { role: 'guest' };
+```
+
 ```javascript
 await db.users.get('ada');
 await db.users.ada;              // any unknown property reads as a key
