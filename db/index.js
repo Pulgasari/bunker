@@ -21,12 +21,16 @@ so a method left out would silently turn into a lookup.
 // :::::: CONSTANTS
 
 const RANGE_END = '￿';
-const TABLE_API = ['clear', 'count', 'delete', 'entries', 'find', 'get', 'getAll', 'getAllByCriteria', 'getByCriteria', 'has', 'keys', 'onChange', 'set', 'toggle'];       
+const TABLE_API = [
+  'clear', 'count', 'delete', 'get', 'has', 'onChange', 'set', 'toggle',
+  'toEntries', 'toKeys', 'toMap', 'toValues',
+  'entries', 'find', 'getAll', 'keys', // deprecated
+];       
 
 // :::::: HELPERS
 
 const isFn     = sth => typeof sth === 'function';
-const isRecord = sth => typeof sth === 'object';
+const isRecord = sth => sth !== null && typeof sth === 'object' && !Array.isArray(sth);
 const isString = sth => typeof sth === 'string';
 const isSymbol = sth => typeof sth === 'symbol';
 
@@ -216,12 +220,16 @@ export class BunkerDB {
     }));
   }
 
-  #scan (table, criteria, limit = Infinity) {
+  #scan (table, spec, limit = Infinity) {
+    const criteria = isRecord(spec) ? spec : null;
+    const prefix   = isString(spec) ? spec : '';
+
     return this.task(table, 'readonly', (os, collect, reject) => {
-      const indexed = Object.keys(criteria).find(key => os.indexNames.contains(key));
+      const indexed = criteria && Object.keys(criteria).find(key => os.indexNames.contains(key));
+      const range   = prefix ? IDBKeyRange.bound(prefix, prefix + RANGE_END) : undefined;
       const request = indexed
         ? os.index(indexed).openCursor(IDBKeyRange.only(criteria[indexed]))
-        : os.openCursor();
+        : os.openCursor(range);
 
       const out = [];
 
@@ -230,7 +238,7 @@ export class BunkerDB {
         if (!cursor) return collect(out);
 
         // primaryKey is the record key for index and object store cursors alike
-        if (matchesCriteria(cursor.value, criteria)) out.push([cursor.primaryKey, cursor.value]);
+        if (!criteria || matchesCriteria(cursor.value, criteria)) out.push([cursor.primaryKey, cursor.value]);
         if (out.length >= limit) return collect(out);
         cursor.continue();
       };
@@ -248,52 +256,32 @@ export class BunkerDB {
   //
   async count  (table, range)  { return this.task(table, 'readonly',  os => os.count(range)); }
   async has    (table, key)    { return (await this.count(table, key)) > 0; }
-//async get    (table, key)    { return (await this.task(table, 'readonly', os => os.get(key))) ?? null; }
 
   // get (single)
-  async getByKey         (table, key)           { return (await this.task(table, 'readonly', os => os.get(key))) ?? null; }
-  async getByCriteria    (table, criteria = {}) { const [hit] = await this.#scan(table, criteria, 1); return hit?.[1] ?? null; }
   async get (table, spec) {
-    if (isString(spec)) return this.getByKey      (table, spec);
-    if (isRecord(spec)) return this.getByCriteria (table, spec);
-    return null;
+    if (!isRecord(spec)) return (await this.task(table, 'readonly', os => os.get(spec))) ?? null;
+    const [hit] = await this.#scan(table, spec, 1);
+    return hit?.[1] ?? null;
   }
 
-  // get (multiple) as list
-  async toEntries (table, spec) {
-    if (isString(spec)) return this.toEntriesByPrefix   (table, spec);
-    if (isRecord(spec)) return this.toEntriesByCriteria (table, spec);
-    return await this.entries(table);
-  }
-  async toEntriesByCriteria (table, criteria = {}) { 
-    return (await this.#scan(table, criteria)).map(([, value]) => value); 
-  }
-  async toEntriesByPrefix (table, prefix   = '') { 
-    return await this.entries(table, prefix);
+  // get (multiple)
+  async toEntries (table, spec) { return this.#scan(table, spec); }
+  async toValues  (table, spec) { return (await this.#scan(table, spec)).map(([, value]) => value); }
+  async toMap     (table, spec) { return Object.fromEntries(await this.#scan(table, spec)); }
+  async toKeys    (table, spec) {
+    if (isRecord(spec)) return (await this.#scan(table, spec)).map(([key]) => key);
+    const range = spec ? IDBKeyRange.bound(spec, spec + RANGE_END) : undefined;
+    return (await this.task(table, 'readonly', os => os.getAllKeys(range))) ?? [];
   }
 
-  // get (multiple) as map
-  async toMap (table, spec) {
-    if (isString(spec)) return this.toMapByPrefix   (table, spec);
-    if (isRecord(spec)) return this.toMapByCriteria (table, spec);
-  }
-  async toMapByCriteria (table, criteria = {}) {
-
-  }
-  async toMapByPrefix (table, prefix   = '') { 
-    return Object.fromEntries(await this.entries(table, prefix));
-  }
-
-  // getAll (bleibt wie es war)
+  // deprecated
   async getAll (table, prefix = '') {
     return Object.fromEntries(await this.entries(table));
   }
-    
   async keys (table, prefix = '') {
     const range = prefix ? IDBKeyRange.bound(prefix, prefix + RANGE_END) : undefined;
     return (await this.task(table, 'readonly', os => os.getAllKeys(range))) ?? [];
   }
-
   async entries (table, prefix = '') {
     const range = prefix ? IDBKeyRange.bound(prefix, prefix + RANGE_END) : undefined;
 
@@ -312,7 +300,6 @@ export class BunkerDB {
       request.onerror = () => reject(request.error);
     });
   }
-
   async find (table, index, value) {
     return this.task(table, 'readonly', (os, collect, reject) => {
       const request = os.index(index).getAll(value);
@@ -337,7 +324,7 @@ export class BunkerDB {
 
     this.#emit({ table, type: 'set', key });
     return next;
-  }3
+  }
 
   // :::::: REACTIVE :::::::::::::::::::::::::::::::::::::::::::::::
 
