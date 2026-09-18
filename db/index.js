@@ -254,8 +254,14 @@ export class BunkerDB {
   async set    (table, key, v) { await this.task(table, 'readwrite', os => os.put(v, key)); this.#emit({ table, type: 'set', key }); }
 
   //
-  async count  (table, range)  { return this.task(table, 'readonly',  os => os.count(range)); }
-  async has    (table, key)    { return (await this.count(table, key)) > 0; }
+  async count (table, spec) {
+    if (isRecord(spec)) return (await this.#scan(table, spec)).length;
+    return this.task(table, 'readonly', os => os.count(spec));
+  }
+  async has (table, spec) {
+    if (isRecord(spec)) return (await this.#scan(table, spec, 1)).length > 0;
+    return (await this.count(table, spec)) > 0;
+  }
 
   // get (single)
   async get (table, spec) {
