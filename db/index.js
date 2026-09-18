@@ -230,7 +230,7 @@ export class BunkerDB {
         if (!cursor) return collect(out);
 
         // primaryKey is the record key for index and object store cursors alike
-        if (matches(cursor.value, criteria)) out.push([cursor.primaryKey, cursor.value]);
+        if (matchesCriteria(cursor.value, criteria)) out.push([cursor.primaryKey, cursor.value]);
         if (out.length >= limit) return collect(out);
         cursor.continue();
       };
@@ -250,6 +250,7 @@ export class BunkerDB {
   async has    (table, key)    { return (await this.count(table, key)) > 0; }
 //async get    (table, key)    { return (await this.task(table, 'readonly', os => os.get(key))) ?? null; }
 
+  // get (single)
   async getByKey         (table, key)           { return (await this.task(table, 'readonly', os => os.get(key))) ?? null; }
   async getByCriteria    (table, criteria = {}) { const [hit] = await this.#scan(table, criteria, 1); return hit?.[1] ?? null; }
   async get (table, spec) {
@@ -258,12 +259,33 @@ export class BunkerDB {
     return null;
   }
 
-  async getAllByCriteria (table, criteria = {}) { return (await this.#scan(table, criteria)).map(([, value]) => value); }
-  async getAllByPrefix   (table, prefix   = '') { return Object.fromEntries(await this.entries(table, prefix)); }
+  // get (multiple) as list
+  async toEntries (table, spec) {
+    if (isString(spec)) return this.toEntriesByPrefix   (table, spec);
+    if (isRecord(spec)) return this.toEntriesByCriteria (table, spec);
+    return await this.entries(table);
+  }
+  async toEntriesByCriteria (table, criteria = {}) { 
+    return (await this.#scan(table, criteria)).map(([, value]) => value); 
+  }
+  async toEntriesByPrefix (table, prefix   = '') { 
+    return await this.entries(table, prefix);
+  }
 
-  async getAll (table, spec) {
-    if (isString(spec)) return this.getAllByPrefix   (table, spec);
-    if (isRecord(spec)) return this.getAllByCriteria (table, spec);
+  // get (multiple) as map
+  async toMap (table, spec) {
+    if (isString(spec)) return this.toMapByPrefix   (table, spec);
+    if (isRecord(spec)) return this.toMapByCriteria (table, spec);
+  }
+  async toMapByCriteria (table, criteria = {}) {
+
+  }
+  async toMapByPrefix (table, prefix   = '') { 
+    return Object.fromEntries(await this.entries(table, prefix));
+  }
+
+  // getAll (bleibt wie es war)
+  async getAll (table, prefix = '') {
     return Object.fromEntries(await this.entries(table));
   }
     
