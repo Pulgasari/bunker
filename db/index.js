@@ -21,6 +21,7 @@ so a method left out would silently turn into a lookup.
 // :::::: CONSTANTS
 
 const RANGE_END = '￿';
+const NO_KEYS   = [];       // clear/drop/destroy touch the whole table, not named keys
 const TABLE_API = [
   'clear', 'count', 'delete', 'deleteMany', 'get', 'has', 'onChange', 'set', 'setMany', 'toggle',
   'toEntries', 'toKeys', 'toMap', 'toValues',
@@ -37,7 +38,7 @@ const isSymbol = sth => typeof sth === 'symbol';
 // strict equality on every criteria key. non-objects can never match, so
 // primitives stored next to records are skipped instead of throwing.
 const matchesCriteria = (value, criteria) => {
-  if (isRecord(value)) return false;
+  if (!isRecord(value)) return false;
   for (const [key, expected] of Object.entries(criteria)) if (value[key] !== expected) return false;
   return true;
 };
@@ -52,6 +53,8 @@ export class BunkerDB {
   #tables = new Set;
   #channel;             // undefined = not armed yet, null = no broadcastchannel in this runtime
   #listeners = new Set; // [table|null, handler] tuples, the tuple is the unsubscribe identity
+  #origin = (globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2));
+  #outbox = null;       // changes buffered for this microtask, null while nothing is pending
 
   static isSupported () { return typeof indexedDB !== 'undefined'; }
 
@@ -76,6 +79,9 @@ export class BunkerDB {
   }
 
   get name    () { return this.#dbName; }
+  // identifies this instance in every change it emits, so a listener can tell its own
+  // writes (state already up to date) from another tab's (needs a re-read).
+  get origin  () { return this.#origin; }
   get tables  () { return [...this.#tables]; }
   get version () { return this.#db?.version ?? null; } // null until the first connection. every schema change bumps it by one.
 
@@ -113,14 +119,17 @@ export class BunkerDB {
 
   #connect () { return this.#db ?? this.#open(); }
 
-  async #getDB (table = null) {
+  // `create` is what separates a write from a read: a write to a table that does not
+  // exist yet makes it, a read of one must not — reading is not a schema change, and
+  // bumping the version for it would upgrade every other tab out of its connection.
+  async #getDB (table = null, create = true) {
     // fast path: connection is live and the store is already known
     if (this.#db && (!table || this.#tables.has(table))) return this.#db;
 
     return this.#lock(async () => {
       await this.#connect();
       // re-check inside the lock, a queued call may have created it already
-      if (!table || this.#tables.has(table)) return this.#db;
+      if (!table || this.#tables.has(table) || !create) return this.#db;
       return this.#open(this.#db.version + 1, (db) => db.createObjectStore(table));
     });
   }
@@ -140,7 +149,11 @@ export class BunkerDB {
   // :::::: ENGINE ::::::::::::::::::::::::::::::::::::::::::::::
   
   async task (table, mode, callback) {
-    const db = await this.#getDB(table);
+    const db = await this.#getDB(table, mode === 'readwrite');
+
+    // a read of a table nobody ever wrote: nothing to open, nothing to find. the
+    // callers below turn this into their own empty ([] / {} / null / 0).
+    if (!db.objectStoreNames.contains(table)) return undefined;
 
     return new Promise ((resolve, reject) => {
       let   value   = undefined;
@@ -198,7 +211,7 @@ export class BunkerDB {
       await this.#connect();
       if (!this.#tables.has(table)) return this.#db;
       const db = await this.#open(this.#db.version + 1, (db) => db.deleteObjectStore(table));
-      this.#emit({ table, type: 'drop' });
+      this.#emit({ table, type: 'drop', keys: NO_KEYS });
       return db;
     });
   }
@@ -214,17 +227,17 @@ export class BunkerDB {
     this.close();
     return this.#lock(() => new Promise ((resolve, reject) => {
       const request = indexedDB.deleteDatabase(this.#dbName);
-      request.onsuccess = () => { this.#tables = new Set; this.#emit({ table: null, type: 'destroy' }); resolve(true); };
+      request.onsuccess = () => { this.#tables = new Set; this.#emit({ table: null, type: 'destroy', keys: NO_KEYS }); resolve(true); };
       request.onerror   = () => reject(request.error);
       request.onblocked = () => reject(new Error(`[bunker] "${this.#dbName}": delete blocked by another connection`));
     }));
   }
 
-  #scan (table, spec, limit = Infinity) {
+  async #scan (table, spec, limit = Infinity) {
     const criteria = isRecord(spec) ? spec : null;
     const prefix   = isString(spec) ? spec : '';
 
-    return this.task(table, 'readonly', (os, collect, reject) => {
+    return (await this.task(table, 'readonly', (os, collect, reject) => {
       const indexed = criteria && Object.keys(criteria).find(key => os.indexNames.contains(key));
       const range   = prefix ? IDBKeyRange.bound(prefix, prefix + RANGE_END) : undefined;
       const request = indexed
@@ -243,35 +256,36 @@ export class BunkerDB {
         cursor.continue();
       };
       request.onerror = () => reject(request.error);
-    });
+    })) ?? [];
   }
 
   // :::::: OPERATIONS ::::::::::::::::::::::::::::::::::::::::::
 
   // mutate
-  async clear  (...tables)     { for (const table of tables) { await this.task(table, 'readwrite', os => os.clear()); this.#emit({ table, type: 'clear' }); } }
-  async delete (table, key)    { await this.task(table, 'readwrite', os => os.delete(key)); this.#emit({ table, type: 'delete', key }); }
-  async set    (table, key, v) { await this.task(table, 'readwrite', os => os.put(v, key)); this.#emit({ table, type: 'set', key }); }
+  async clear  (...tables)     { for (const table of tables) { await this.task(table, 'readwrite', os => os.clear()); this.#emit({ table, type: 'clear', keys: NO_KEYS }); } }
+  async delete (table, key)    { await this.task(table, 'readwrite', os => os.delete(key)); this.#emit({ table, type: 'delete', keys: [key] }); }
+  async set    (table, key, v) { await this.task(table, 'readwrite', os => os.put(v, key)); this.#emit({ table, type: 'set', keys: [key] }); }
   // mutate (batch)
-  // one transaction for the whole batch: an abort rolls back every key.
-  // emits one change per key, so handlers stay unchanged.
+  // one transaction for the whole batch: an abort rolls back every key. one change
+  // for the whole batch too — a change per key would put a thousand postMessages on
+  // the bus for one feed import, and a handler re-reads the table either way.
   async setMany (table, entries) {
     const pairs = isRecord(entries) ? Object.entries(entries) : [...entries];
     if (!pairs.length) return;
     await this.task(table, 'readwrite', os => { for (const [key, value] of pairs) os.put(value, key); });
-    for (const [key] of pairs) this.#emit({ table, type: 'set', key });
+    this.#emit({ table, type: 'set', keys: pairs.map(([key]) => key) });
   }
   async deleteMany (table, keys) {
     const list = [...keys];
     if (!list.length) return;
     await this.task(table, 'readwrite', os => { for (const key of list) os.delete(key); });
-    for (const key of list) this.#emit({ table, type: 'delete', key });
+    this.#emit({ table, type: 'delete', keys: list });
   }
   
   //
   async count (table, spec) {
     if (isRecord(spec)) return (await this.#scan(table, spec)).length;
-    return this.task(table, 'readonly', os => os.count(spec));
+    return (await this.task(table, 'readonly', os => os.count(spec))) ?? 0;
   }
   async has (table, spec) {
     if (isRecord(spec)) return (await this.#scan(table, spec, 1)).length > 0;
@@ -315,7 +329,7 @@ export class BunkerDB {
       read.onerror = () => reject(read.error);
     });
 
-    this.#emit({ table, type: 'set', key });
+    this.#emit({ table, type: 'set', keys: [key] });
     return next;
   }
 
@@ -338,16 +352,39 @@ export class BunkerDB {
     }
   }
 
-  // payload stays small on purpose: no value is shipped, handlers re-read what they need. 
-  // keeps cross-tab traffic cheap and local/remote events identical.
+  // changes raised in the same turn are merged before anyone hears about them: one
+  // write of a podcast plus one of its episodes is two operations but one update as
+  // far as a listener is concerned. merging is per table+type+origin, so a set and a
+  // delete stay apart and a remote change never folds into a local one.
+  #flush () {
+    const batch  = this.#outbox;
+    this.#outbox = null;
+
+    for (const change of batch.values()) {
+      this.#notify(change);
+      this.#bus()?.postMessage(change);
+    }
+  }
+
+  // payload stays small on purpose: no value is shipped, handlers re-read what they
+  // need. keeps cross-tab traffic cheap and local/remote changes identical apart from
+  // `origin`, which says which instance wrote it.
   #emit (change) {
-    this.#notify(change);
-    this.#bus()?.postMessage(change);
+    change = { ...change, origin: this.#origin };
+
+    if (!this.#outbox) { this.#outbox = new Map; queueMicrotask(() => this.#flush()); }
+
+    const id   = `${change.table}\u0000${change.type}`;
+    const held = this.#outbox.get(id);
+    if (held) held.keys = [...held.keys, ...change.keys];
+    else      this.#outbox.set(id, change);
   }
 
   // onChange(handler) listens on every table, onChange(table, handler) on one.
-  // change = { table, type: 'set'|'delete'|'clear'|'drop'|'destroy', key? }
-  // returns the unsubscribe.
+  // change = { table, type: 'set'|'delete'|'clear'|'drop'|'destroy', keys, origin }
+  // keys is always an array — empty for clear/drop/destroy, which touch the whole
+  // table. origin names the instance that wrote it: skip `change.origin === db.origin`
+  // to react to other tabs only. returns the unsubscribe.
   onChange (table, handler) {
     if (isFn(table)) [table, handler] = [null, table];
     if (!isFn(handler)) throw new TypeError('[bunker] onChange expects a handler function');

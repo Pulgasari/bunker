@@ -69,6 +69,99 @@ await db.task('posts', 'readwrite', os => os.put({ author: 'ada', id: 2, title: 
 await db.task('posts', 'readwrite', os => os.put({ author: 'bob', id: 3, title: 'three' }));
 assert.equal((await db.find('posts', 'author', 'ada')).length, 2);
 
+// :::::: criteria queries
+// an object spec matches on the records' own properties; a stored primitive can
+// never match one, so it is skipped rather than throwing.
+assert.equal((await db.posts.get({ author: 'bob' }))?.id, 3);
+assert.equal(await db.posts.get({ author: 'nobody' }), null);
+assert.equal((await db.posts.toValues({ author: 'ada' })).length, 2);
+assert.equal((await db.posts.toValues({ author: 'ada', title: 'two' })).length, 1);
+assert.equal(await db.posts.count({ author: 'ada' }), 2);
+assert.equal(await db.posts.has({ author: 'bob' }), true);
+assert.equal(await db.posts.has({ author: 'zoe' }), false);
+assert.equal((await db.posts.toKeys({ author: 'ada' })).length, 2);
+
+await db.set('mixed', 'rec', { kind: 'a' });
+await db.set('mixed', 'raw', 'just a string');
+assert.equal((await db.toValues('mixed', { kind: 'a' })).length, 1, 'primitives are skipped, not matched');
+assert.equal((await db.toValues('mixed', {})).length, 1, 'empty criteria still means records only');
+
+// :::::: changes
+// settle on a macrotask: handlers run in a microtask, one turn after the emit.
+const settle = () => new Promise(resolve => setTimeout(resolve, 0));
+
+const seen = [];
+const stop = db.onChange('notes', change => seen.push(change));
+
+await db.notes.set('n1', { text: 'one' });
+await settle();
+assert.equal(seen.length, 1);
+assert.deepEqual(seen[0].keys, ['n1'], 'keys is always an array');
+assert.equal(seen[0].type, 'set');
+assert.equal(seen[0].origin, db.origin, 'a change names the instance that wrote it');
+
+// a batch is one change carrying every key, not one change per key
+seen.length = 0;
+await db.notes.setMany([['n2', {}], ['n3', {}], ['n4', {}]]);
+await settle();
+assert.equal(seen.length, 1, 'setMany emits once for the whole batch');
+assert.deepEqual(seen[0].keys.sort(), ['n2', 'n3', 'n4']);
+
+seen.length = 0;
+await db.notes.deleteMany(['n2', 'n3']);
+await settle();
+assert.equal(seen.length, 1, 'deleteMany emits once for the whole batch');
+assert.deepEqual(seen[0].keys.sort(), ['n2', 'n3']);
+
+// changes raised in the same turn merge, so the count depends on timing — what must
+// hold either way is that merging never loses a key
+seen.length = 0;
+await Promise.all([db.notes.set('n5', {}), db.notes.set('n6', {})]);
+await settle();
+assert.deepEqual(seen.flatMap(change => change.keys).sort(), ['n5', 'n6'], 'merging must not drop keys');
+
+// a set and a delete describe different things and must never merge
+seen.length = 0;
+await Promise.all([db.notes.set('n7', {}), db.notes.delete('n6')]);
+await settle();
+assert.equal(seen.filter(c => c.type === 'set').length, 1);
+assert.equal(seen.filter(c => c.type === 'delete').length, 1);
+
+// clear takes the whole table, so it names no keys
+seen.length = 0;
+await db.clear('notes');
+await settle();
+assert.equal(seen[0].type, 'clear');
+assert.deepEqual(seen[0].keys, []);
+
+// a table listener hears only its own table, and stops when told to
+seen.length = 0;
+await db.set('elsewhere', 'k', 1);
+await settle();
+assert.equal(seen.length, 0, 'a table listener ignores other tables');
+
+stop();
+await db.notes.set('n8', {});
+await settle();
+assert.equal(seen.length, 0, 'onChange returns a working unsubscribe');
+
+// :::::: reading never changes the schema
+// a write to an unknown table creates it; a read of one must not, or every read
+// would upgrade the other tabs out of their connection.
+const versionBeforeReads = db.version;
+assert.deepEqual(await db.ghost.toValues(), []);
+assert.deepEqual(await db.ghost.toMap(), {});
+assert.deepEqual(await db.ghost.toKeys(), []);
+assert.equal(await db.ghost.get('x'), null);
+assert.equal(await db.ghost.count(), 0);
+assert.equal(await db.ghost.has('x'), false);
+assert.equal(db.version, versionBeforeReads, 'reads must not bump the version');
+assert.equal(db.tables.includes('ghost'), false, 'reads must not create the table');
+
+await db.ghost.set('x', 1);
+assert.equal(db.tables.includes('ghost'), true, 'a write still creates it');
+assert.equal(await db.ghost.get('x'), 1);
+
 // :::::: driver contract
 const driver = db.driver('kv');
 assert.ok(isDriver(driver));
