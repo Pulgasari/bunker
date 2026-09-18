@@ -37,7 +37,7 @@ const isSymbol = sth => typeof sth === 'symbol';
 // strict equality on every criteria key. non-objects can never match, so
 // primitives stored next to records are skipped instead of throwing.
 const matchesCriteria = (value, criteria) => {
-  if (!value || typeof value !== 'object') return false;
+  if (isRecord(value)) return false;
   for (const [key, expected] of Object.entries(criteria)) if (value[key] !== expected) return false;
   return true;
 };
