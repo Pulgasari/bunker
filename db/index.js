@@ -276,7 +276,7 @@ export class BunkerDB {
 
   // deprecated
   async getAll (table, prefix = '') {
-    return Object.fromEntries(await this.entries(table));
+    return Object.fromEntries(await this.entries(table, prefix));
   }
   async keys (table, prefix = '') {
     const range = prefix ? IDBKeyRange.bound(prefix, prefix + RANGE_END) : undefined;
