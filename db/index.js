@@ -22,7 +22,7 @@ so a method left out would silently turn into a lookup.
 
 const RANGE_END = '￿';
 const TABLE_API = [
-  'clear', 'count', 'delete', 'get', 'has', 'onChange', 'set', 'toggle',
+  'clear', 'count', 'delete', 'deleteMany', 'get', 'has', 'onChange', 'set', 'setMany', 'toggle',
   'toEntries', 'toKeys', 'toMap', 'toValues',
   'entries', 'find', 'getAll', 'keys', // deprecated
 ];       
@@ -252,7 +252,22 @@ export class BunkerDB {
   async clear  (...tables)     { for (const table of tables) { await this.task(table, 'readwrite', os => os.clear()); this.#emit({ table, type: 'clear' }); } }
   async delete (table, key)    { await this.task(table, 'readwrite', os => os.delete(key)); this.#emit({ table, type: 'delete', key }); }
   async set    (table, key, v) { await this.task(table, 'readwrite', os => os.put(v, key)); this.#emit({ table, type: 'set', key }); }
-
+  // mutate (batch)
+  // one transaction for the whole batch: an abort rolls back every key.
+  // emits one change per key, so handlers stay unchanged.
+  async setMany (table, entries) {
+    const pairs = isRecord(entries) ? Object.entries(entries) : [...entries];
+    if (!pairs.length) return;
+    await this.task(table, 'readwrite', os => { for (const [key, value] of pairs) os.put(value, key); });
+    for (const [key] of pairs) this.#emit({ table, type: 'set', key });
+  }
+  async deleteMany (table, keys) {
+    const list = [...keys];
+    if (!list.length) return;
+    await this.task(table, 'readwrite', os => { for (const key of list) os.delete(key); });
+    for (const key of list) this.#emit({ table, type: 'delete', key });
+  }
+  
   //
   async count (table, spec) {
     if (isRecord(spec)) return (await this.#scan(table, spec)).length;
