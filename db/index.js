@@ -275,38 +275,10 @@ export class BunkerDB {
   }
 
   // deprecated
-  async getAll (table, prefix = '') {
-    return Object.fromEntries(await this.entries(table, prefix));
-  }
-  async keys (table, prefix = '') {
-    const range = prefix ? IDBKeyRange.bound(prefix, prefix + RANGE_END) : undefined;
-    return (await this.task(table, 'readonly', os => os.getAllKeys(range))) ?? [];
-  }
-  async entries (table, prefix = '') {
-    const range = prefix ? IDBKeyRange.bound(prefix, prefix + RANGE_END) : undefined;
-
-    return this.task(table, 'readonly', (os, collect, reject) => {
-      const request = os.openCursor(range);
-      const out     = [];
-
-      request.onsuccess = (event) => {
-        const cursor = event.target.result;
-        if (cursor) {
-          out.push([cursor.key, cursor.value]); 
-          cursor.continue();
-        }
-        else collect(out);
-      };
-      request.onerror = () => reject(request.error);
-    });
-  }
-  async find (table, index, value) {
-    return this.task(table, 'readonly', (os, collect, reject) => {
-      const request = os.index(index).getAll(value);
-      request.onsuccess = () => collect (request.result);
-      request.onerror   = () => reject  (request.error);
-    });
-  }
+  async getAll  (table, prefix = '')   { return this.toMap     (table, prefix); }
+  async keys    (table, prefix = '')   { return this.toKeys    (table, prefix); }
+  async entries (table, prefix = '')   { return this.toEntries (table, prefix); }
+  async find    (table, index, value)  { return this.toValues  (table, { [index]: value }); }
   
   // reads and writes in one transaction, so two tabs cannot interleave between them
   async toggle (table, key) {
