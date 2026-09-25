@@ -9,6 +9,7 @@ node test/utils.test.mjs
 node test/storage.test.mjs
 node test/db.test.mjs
 node test/cache.test.mjs
+node test/opfs.test.mjs
 node test/policy.test.mjs
 node test/kit.test.mjs
 EXPECT_PERSISTENT=1 node --experimental-webstorage \

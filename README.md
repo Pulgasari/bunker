@@ -2,7 +2,7 @@
 
 Browser storage, split along the lines the platform actually draws.
 
-The three web storage APIs are not three flavours of the same thing — they differ in
+The web storage APIs are not flavours of the same thing — they differ in
 the one property that decides what you can build on them:
 
 |                  | synchronous          | holds                                | quota         | in a worker |
@@ -10,6 +10,7 @@ the one property that decides what you can build on them:
 | `localStorage`   | **yes, the only one**| strings                              | ~5 MB         | no          |
 | `IndexedDB`      | no                   | structured clone, `Blob`, `ArrayBuffer` | origin quota | yes         |
 | Cache API        | no                   | `Request` / `Response`               | origin quota  | yes         |
+| OPFS             | no (sync in a worker)| files                                | origin quota  | yes         |
 
 bunker gives each one a package, and keeps caching *policy* out of all of them.
 
@@ -18,6 +19,7 @@ bunker gives each one a package, and keeps caching *policy* out of all of them.
 @bunker/db        IndexedDB
 @bunker/storage   localStorage / sessionStorage, synchronous
 @bunker/cache     Cache API, window and service worker
+@bunker/opfs      origin private file system, files as values
 @bunker/policy    TTL and stale-while-revalidate over any driver
 @bunker/utils     memoize, single flight, content hash, quota, cross-tab
 @bunker/kit       the six above, pre-wired
@@ -36,6 +38,7 @@ utils
       ├── db       -> exports a driver
       ├── storage  -> exports a driver
       ├── cache    -> exports a driver
+      ├── opfs     -> exports a driver
       └── policy   -> takes a driver, knows none of them
 ```
 
@@ -56,6 +59,8 @@ wiring happens.
   blobs, offline data.
 - **`cache`** — anything with a URL: stylesheets, `woff2`, images, wasm. A service worker
   answers the real request from here, so the browser's own loading path is untouched.
+- **`opfs`** — bytes that have no URL: generated thumbnails, exports, recordings,
+  anything a user may want to find again as a file.
 - **`policy`** — not a place to put things. Something you wrap around one of the above.
 - **`utils`** — the small in-process helpers the packages share. No I/O, nothing stored.
 

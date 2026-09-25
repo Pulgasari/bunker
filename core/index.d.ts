@@ -48,8 +48,6 @@ export declare function createMemoryDriver(): SyncDriver & { readonly size: numb
  */
 export declare function withKeyspace<T extends Driver>(driver: T, keyspace?: Keyspace): T;
 
-}
-
 // :::::: KEYS
 
 export declare const SEPARATOR: ':';

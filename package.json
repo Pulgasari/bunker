@@ -9,6 +9,7 @@
     "core",
     "db",
     "kit",
+    "opfs",
     "policy",
     "storage",
     "utils"
