@@ -4,10 +4,14 @@
     "./core",
     "./db",
     "./kit",
+    "./opfs",
     "./policy",
     "./storage",
     "./utils"
   ],
+  "compilerOptions": {
+    "lib": ["deno.window", "dom", "dom.iterable", "dom.asynciterable"]
+  },
   "tasks": {
     "check"       : "deno check */*.js",
     "lint"        : "deno lint",
