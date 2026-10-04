@@ -23,8 +23,8 @@ const SWAP        = /\.crswap$/;                                                
 const textEncoder = new TextEncoder();
 
 const isSupported = () => typeof navigator !== 'undefined' && typeof navigator.storage?.getDirectory === 'function';
-const isBinary    = (val) => val instanceof Blob || val instanceof ArrayBuffer || ArrayBuffer.isView(val);
-const isNotFound  = (err) => err?.name === 'NotFoundError';
+const isBinary    = (v) => v instanceof Blob || v instanceof ArrayBuffer || ArrayBuffer.isView(v);
+const isNotFound  = (e) => e?.name === 'NotFoundError';
 
 // names stay readable: '%' '/' '\\' controls and '.' '..' escaped
 const escape = (c) => '%' + c.charCodeAt(0).toString(16).padStart(2, '0').toUpperCase();
@@ -106,22 +106,6 @@ function createOPFS (options = {}) {
   const done     = (operation, key, detail = null) => onError ? null : onSuccess?.({ detail, key, operation });
   const fail     = (operation, key, error)         => onError?.({ error, key, operation });
 
-  /** execution boundary helper handling dir resolution and error boundaries */
-  async function guard (operation, key, fn, fallback = false, ignoreNotFound = false) {
-    const dir = await open();
-    if (!dir) return fallback;
-
-    try {
-      const [result, detail] = await fn(dir);
-      done(operation, key, detail);
-      return result;
-    }
-    catch (error) {
-      if (!ignoreNotFound || !isNotFound(error)) fail(operation, key, error);
-      return fallback;
-    }
-  }
-
   /** directory handle memoized on first access */
   function open () {
     if (!isSupported()) return Promise.resolve(null);
@@ -131,6 +115,21 @@ function createOPFS (options = {}) {
       return handle;
     })().catch(err => { fail('open', directory, err); opened = null; return null; });
   }
+
+  /** curried higher-order action execution boundary */
+  const op = (operation, fallback = false, ignoreNotFound = false) =>
+    (fn) => async (key, ...args) => {
+      const dir = await open();
+      if (!dir) return fallback;
+      try {
+        const [result, detail] = await fn(dir, key, ...args);
+        done(operation, key, detail);
+        return result;
+      } catch (err) {
+        if (!ignoreNotFound || !isNotFound(err)) fail(operation, key, err);
+        return fallback;
+      }
+    };
 
   /** generator yielding valid [key, handle] pairs */
   async function* iterateFiles (prefix = '') {
@@ -144,51 +143,50 @@ function createOPFS (options = {}) {
     }
   }
 
-  const file = (key) => guard('file', key, async (dir) => [
+  // curried operations
+  const file = op('file', null, true)(async (dir, key) => [
     await (await dir.getFileHandle(toName(key))).getFile()
-  ], null, true);
+  ]);
 
-  const get = async (key) => {
-    const found = await file(key);
-    if (!found) { done('get', key, { hit: false }); return null; }
-
-    return guard('get', key, async () => [
-      await isPacked(found) ? await unpack(found) : found,
-      { hit: true }
-    ], null);
-  };
-
-  const set = (key, val) => guard('set', key, async (dir) => {
+  const set = op('set')(async (dir, key, val) => {
     await write(await dir.getFileHandle(toName(key), { create: true }), isBinary(val) ? val : pack(val));
     return [true];
   });
 
-  const remove = (key) => guard('delete', key, async (dir) => {
+  const remove = op('delete', false, true)(async (dir, key) => {
     await dir.removeEntry(toName(key));
     return [true];
-  }, false, true);
+  });
 
-  const has = async (key) => (await file(key)) !== null;
-
-  const entries = (prefix = '') => guard('entries', prefix, async () => [
+  const entries = op('entries', [])(async (_, prefix = '') => [
     await Array.fromAsync(iterateFiles(prefix), async ([key, handle]) => {
       const { lastModified, size } = await handle.getFile();
       return { key, lastModified, size };
     })
-  ], []);
+  ]);
 
-  const keys = (prefix = '') => guard('keys', prefix, async () => [
+  const keys = op('keys', [])(async (_, prefix = '') => [
     await Array.fromAsync(iterateFiles(prefix), ([key]) => key)
-  ], []);
+  ]);
 
-  const size = async (prefix = '') => (await entries(prefix)).reduce((acc, entry) => acc + entry.size, 0);
-
-  const clear = () => guard('clear', directory, async (dir) => {
-    const names = [];
-    for await (const name of dir.keys()) names.push(name);
-    for       (const name of names)      await dir.removeEntry(name, { recursive: true });
+  const clear = op('clear')(async (dir) => {
+    const names = await Array.fromAsync(dir.keys());
+    await Promise.all(names.map(n => dir.removeEntry(n, { recursive: true })));
     return [true, { removed: names.length }];
   });
+
+  const get = async (key) => {
+    const found = await file(key);
+    if (!found) { done('get', key, { hit: false }); return null; }
+    return op('get', null)(async () => [
+      await isPacked(found) ? await unpack(found) : found,
+      { hit: true }
+    ])(key);
+  };
+
+  // point-free / promise composition
+  const has  = (key) => file(key).then(Boolean);
+  const size = (prefix = '') => entries(prefix).then(list => list.reduce((acc, { size }) => acc + size, 0));
 
   // :::::: DRIVER :::::::::::::::::::::::::::::::::::::::::::::::
 
