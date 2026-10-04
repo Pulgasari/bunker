@@ -242,5 +242,5 @@ const createOpfs = createOPFS;
 
 // :::::: EXPORT
 
-export { createOPFS, isSupported };
+export { createOpfs, createOPFS, isSupported };
 export default createOPFS;
