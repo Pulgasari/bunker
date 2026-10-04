@@ -23,14 +23,13 @@ const SWAP        = /\.crswap$/;                                                
 const textEncoder = new TextEncoder();
 
 const isSupported = () => typeof navigator !== 'undefined' && typeof navigator.storage?.getDirectory === 'function';
-const isBinary    = (value) => value instanceof Blob || value instanceof ArrayBuffer || ArrayBuffer.isView(value);
-const isNotFound  = (error) => error?.name === 'NotFoundError';
+const isBinary    = (val) => val instanceof Blob || val instanceof ArrayBuffer || ArrayBuffer.isView(val);
+const isNotFound  = (err) => err?.name === 'NotFoundError';
 
-// only what a file name cannot hold is escaped, so names stay readable in an
-// explorer: '%', '/', '\\', control characters, and the names '.' and '..'
-const escape = (char) => '%' + char.charCodeAt(0).toString(16).padStart(2, '0').toUpperCase();
-const toName = (key)  => { const name = String(key).replace(/[%/\\\x00-\x1f]/g, escape); return name === '.' || name === '..' ? name.replace(/\./g, escape) : name; };
-const toKey  = (name) => { try { return decodeURIComponent(name); } catch { return name; } };
+// names stay readable: '%' '/' '\\' controls and '.' '..' escaped
+const escape = (c) => '%' + c.charCodeAt(0).toString(16).padStart(2, '0').toUpperCase();
+const toName = (k) => { const n = String(k).replace(/[%/\\\x00-\x1f]/g, escape); return n === '.' || n === '..' ? n.replace(/\./g, escape) : n; };
+const toKey  = (n) => { try { return decodeURIComponent(n); } catch { return n; } };
 
 // :::::: CONTAINER :::::::::::::::::::::::::::::::::::::::::::::
 
@@ -38,7 +37,7 @@ function pack (value) {
   const parts = [];
   let offset  = 0;
 
-  const valueJson = JSON.stringify(value, (_key, item) => {
+  const valueJson = JSON.stringify(value, (_k, item) => {
     if (!isBinary(item)) return item;
     const blob = item instanceof Blob ? item : new Blob([item]);
     parts.push({ blob, offset, size: blob.size, type: blob.type });
@@ -46,20 +45,19 @@ function pack (value) {
     return { [BINARY]: parts.length - 1 };
   }) ?? 'null';
 
-  const partsJson = JSON.stringify(parts.map(({ offset, size, type }) => [offset, size, type]));
+  const partsJson = JSON.stringify(parts.map(p => [p.offset, p.size, p.type]));
   const header    = textEncoder.encode(`{"parts":${partsJson},"value":${valueJson}}`);
-
-  const prefix = new Uint8Array (HEADER);
+  const prefix    = new Uint8Array(HEADER);
   prefix.set(MAGIC);
-  new DataView (prefix.buffer).setUint32(MAGIC.length, header.length, true);
+  new DataView(prefix.buffer).setUint32(MAGIC.length, header.length, true);
 
-  return new Blob([prefix, header, ...parts.map(part => part.blob)]);
+  return new Blob([prefix, header, ...parts.map(p => p.blob)]);
 }
 
 async function isPacked (file) {
   if (file.size < HEADER) return false;
   const head = new Uint8Array(await file.slice(0, MAGIC.length).arrayBuffer());
-  return MAGIC.every((byte, index) => head[index] === byte);
+  return MAGIC.every((b, i) => head[i] === b);
 }
 
 async function unpack (file) {
@@ -71,30 +69,27 @@ async function unpack (file) {
     if (Array.isArray(item)) return item.map(revive);
     if (!item || typeof item !== 'object') return item;
     if (BINARY in item) {
-      const [offset, size, type] = parts[item[BINARY]];
-      return file.slice(start + offset, start + offset + size, type);
+      const [off, size, type] = parts[item[BINARY]];
+      return file.slice(start + off, start + off + size, type);
     }
-    for (const key of Object.keys(item)) item[key] = revive(item[key]);
+    for (const k of Object.keys(item)) item[k] = revive(item[k]);
     return item;
   };
 
   return revive(value);
 }
 
-// createWritable is missing on older safari outside a worker. inside one the
-// sync access handle is always there
+// write strategy wrapper
 async function write (handle, data) {
   if (typeof handle.createWritable === 'function') {
-    const writable = await handle.createWritable();
-    await writable.write(data);
-    await writable.close();
-    return;
+    const w = await handle.createWritable();
+    await w.write(data);
+    return w.close();
   }
 
   if (typeof handle.createSyncAccessHandle === 'function') {
-    const bytes  = new Uint8Array(await new Blob([data]).arrayBuffer());
     const access = await handle.createSyncAccessHandle();
-    try     { access.truncate(0); access.write(bytes, { at: 0 }); access.flush(); }
+    try     { access.truncate(0); access.write(new Uint8Array(await new Blob([data]).arrayBuffer()), { at: 0 }); access.flush(); }
     finally { access.close(); }
     return;
   }
@@ -108,153 +103,115 @@ function createOPFS (options = {}) {
   let opened = null;
   const { directory = 'bunker', onError = null, onSuccess = null } = options;
   const segments = String(directory).split('/').filter(Boolean);
-  const done     = (operation, key, detail = null) => { onSuccess?.({ detail, key, operation }); };
-  const fail     = (operation, key, error)         => {   onError?.({  error, key, operation }); };
+  const done     = (operation, key, detail = null) => onError ? null : onSuccess?.({ detail, key, operation });
+  const fail     = (operation, key, error)         => onError?.({ error, key, operation });
 
-  /** general error boundary helper to eliminate repetitive try/catch blocks */
-  async function guard (operation, key, fn, ignoreNotFound = false) {
-    const dir = await open(); if (!dir) return false;
-    
-    try { 
-      const [ result, detail ] = await fn ();
-      done(operation. key, detail);
+  /** execution boundary helper handling dir resolution and error boundaries */
+  async function guard (operation, key, fn, fallback = false, ignoreNotFound = false) {
+    const dir = await open();
+    if (!dir) return fallback;
+
+    try {
+      const [result, detail] = await fn(dir);
+      done(operation, key, detail);
       return result;
     }
     catch (error) {
       if (!ignoreNotFound || !isNotFound(error)) fail(operation, key, error);
-      return false;
+      return fallback;
     }
   }
 
-  /** the directory handle, created on first use. null without opfs */
+  /** directory handle memoized on first access */
   function open () {
     if (!isSupported()) return Promise.resolve(null);
     return opened ??= (async () => {
       let handle = await navigator.storage.getDirectory();
-      for (const segment of segments) handle = await handle.getDirectoryHandle(segment, { create: true });
+      for (const seg of segments) handle = await handle.getDirectoryHandle(seg, { create: true });
       return handle;
-    })().catch(error => { fail('open', directory, error); opened = null; return null; });
+    })().catch(err => { fail('open', directory, err); opened = null; return null; });
   }
 
-  /** generator yielding valid [key, handle] pairs matching prefix */
+  /** generator yielding valid [key, handle] pairs */
   async function* iterateFiles (prefix = '') {
     const dir = await open(); if (!dir) return;
 
     for await (const [name, handle] of dir.entries()) {
-      if (handle.kind !== 'file' || SWAP.test(name)) continue;
-      const key = toKey(name);
-      if (key.startsWith(prefix)) yield [key, handle];
+      if (handle.kind === 'file' && !SWAP.test(name)) {
+        const key = toKey(name);
+        if (key.startsWith(prefix)) yield [key, handle];
+      }
     }
   }
 
-  /** the stored file itself, null when missing */
-  async function file (key) { return guard ('file', key, async () => {
-    const handle = await dir.getFileHandle(toName(key));
-    const file   = await handle.getFile();
-    return file;
-  }, true) || null; }
+  const file = (key) => guard('file', key, async (dir) => [
+    await (await dir.getFileHandle(toName(key))).getFile()
+  ], null, true);
 
-  /** bytes come back as a File, everything else as it was stored */
-  async function get (key) {
+  const get = async (key) => {
     const found = await file(key);
     if (!found) { done('get', key, { hit: false }); return null; }
 
-    return guard('get', key, async () => {
-      const value = await isPacked(found) ? await unpack(found) : found;
-      return [ value, { hit: true }];
-    });
-  }
+    return guard('get', key, async () => [
+      await isPacked(found) ? await unpack(found) : found,
+      { hit: true }
+    ], null);
+  };
 
-  async function set (key, value) {
-    return guard('set', key, async () => {
-      const handle = await dir.getFileHandle(toName(key), { create: true });
-      await write(handle, isBinary(value) ? value : pack(value));
-      return [ true ];
-    });
-  }
+  const set = (key, val) => guard('set', key, async (dir) => {
+    await write(await dir.getFileHandle(toName(key), { create: true }), isBinary(val) ? val : pack(val));
+    return [true];
+  });
 
-  async function remove (key) {
-    return guard ('delete', key, async () => {
-      await dir.removeEntry(toName(key));
-      return [ true ];
-    }, true);
-  }
-  
-  async function remove (key) {
-    const dir = await open(); if (!dir) return false;
-    try {
-      await dir.removeEntry(toName(key));
-      return true;
-    }
-    catch (error) {
-      if (!isNotFound(error)) fail('delete', key, error);
-      return false;
-    }
-  }
+  const remove = (key) => guard('delete', key, async (dir) => {
+    await dir.removeEntry(toName(key));
+    return [true];
+  }, false, true);
 
   const has = async (key) => (await file(key)) !== null;
 
-  /** { key, lastModified, size } per stored file */
-  async function entries (prefix = '') {
-    return guard ('entries', prefix, async () => {
-      const list = [];
-      for await (const [key, handle] of iterateFiles(prefix)) {
-        const { lastModified, size } = await handle.getFile();
-        list.push({ key, lastModified, size });
-      }
-      
-      return list;
-    }) || [];
-  }
+  const entries = (prefix = '') => guard('entries', prefix, async () => [
+    await Array.fromAsync(iterateFiles(prefix), async ([key, handle]) => {
+      const { lastModified, size } = await handle.getFile();
+      return { key, lastModified, size };
+    })
+  ], []);
 
-  async function keys (prefix = '') {
-    return guard('keys', prefix, async () => {
-      return Array.fromAsync( iterateFiles(prefix), ([key]) => key )) || [];
-    }
-  }
+  const keys = (prefix = '') => guard('keys', prefix, async () => [
+    await Array.fromAsync(iterateFiles(prefix), ([key]) => key)
+  ], []);
 
-  /** bytes on disk, summed over the stored files */
-  const size = async (prefix = '') => (await entries(prefix)).reduce((total, entry) => total + entry.size, 0);
+  const size = async (prefix = '') => (await entries(prefix)).reduce((acc, entry) => acc + entry.size, 0);
 
-  // empties the directory but keeps it, so the cached handle stays valid
-  async function clear () {
-    return guard('clear', directory, async () => {
-      const names = [];
-      for await (const name of dir.keys()) names.push(name);
-      for       (const name of names)      await dir.removeEntry(name, { recursive: true });
-      
-      done('clear', directory, { removed: names.length });
-      return true;
-    });
-  }
+  const clear = () => guard('clear', directory, async (dir) => {
+    const names = [];
+    for await (const name of dir.keys()) names.push(name);
+    for       (const name of names)      await dir.removeEntry(name, { recursive: true });
+    return [true, { removed: names.length }];
+  });
 
   // :::::: DRIVER :::::::::::::::::::::::::::::::::::::::::::::::
 
-  /** a @bunker/core driver, e.g. the l2 of @bunker/policy */
-  function driver () {
-    return {
-      name   : `opfs:${segments.join('/')}`,
-      sync   : false,
-      clear  : ()           => clear     ().then(() => undefined),
-      delete : (key)        => remove (key).then(() => undefined),
-      get    : (key)        => get    (key),
-      keys   : (prefix)     => keys   (prefix),
-      set    : async (key, value) => { if (!await set(key, value)) throw new Error(`[bunker] could not write "${key}" to the opfs`); },
-    };
-  }
+  const driver = () => ({
+    name   : `opfs:${segments.join('/')}`,
+    sync   : false,
+    clear  : ()           => clear().then(() => undefined),
+    delete : (key)        => remove(key).then(() => undefined),
+    get    : (key)        => get(key),
+    keys   : (prefix)     => keys(prefix),
+    set    : async (key, val) => { if (!await set(key, val)) throw new Error(`[bunker] could not write "${key}" to the opfs`); },
+  });
 
   return {
-    directory : segments.join('/'),
-    delete    : remove,
+    directory: segments.join('/'),
+    delete: remove,
     clear, driver, entries, file, get, has, isSupported, keys, open, set, size,
   };
 }
 
-// :::::: ALIASES
+// :::::: ALIASES & EXPORTS
 
 const createOpfs = createOPFS;
-
-// :::::: EXPORT
 
 export { createOPFS, isSupported };
 export default createOPFS;
