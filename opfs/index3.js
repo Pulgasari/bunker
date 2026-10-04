@@ -112,13 +112,17 @@ function createOPFS (options = {}) {
   const fail     = (operation, key, error)         => {   onError?.({  error, key, operation }); };
 
   /** general error boundary helper to eliminate repetitive try/catch blocks */
-  async function guard (operation, key, fn, fallback = null, ignoreNotFound = false) {
+  async function guard (operation, key, fn, ignoreNotFound = false) {
+    const dir = await open(); if (!dir) return false;
+    
     try { 
-      return await fn();
+      const [ result, detail ] = await fn ();
+      done(operation. key, detail);
+      return result;
     }
     catch (error) {
       if (!ignoreNotFound || !isNotFound(error)) fail(operation, key, error);
-      return fallback;
+      return false;
     }
   }
 
@@ -134,8 +138,7 @@ function createOPFS (options = {}) {
 
   /** generator yielding valid [key, handle] pairs matching prefix */
   async function* iterateFiles (prefix = '') {
-    const dir = await open();
-    if (!dir) return;
+    const dir = await open(); if (!dir) return;
 
     for await (const [name, handle] of dir.entries()) {
       if (handle.kind !== 'file' || SWAP.test(name)) continue;
@@ -145,15 +148,11 @@ function createOPFS (options = {}) {
   }
 
   /** the stored file itself, null when missing */
-  async function file (key) {
-    const dir = await open(); if (!dir) return null;
-    
-    return guard('file', key, async () => {
-      const handle = await dir.getFileHandle(toName(key));
-      const file   = await handle.getFile();
-      return file;
-    }, null, true);
-  }
+  async function file (key) { return guard ('file', key, async () => {
+    const handle = await dir.getFileHandle(toName(key));
+    const file   = await handle.getFile();
+    return file;
+  }, true) || null; }
 
   /** bytes come back as a File, everything else as it was stored */
   async function get (key) {
@@ -162,50 +161,56 @@ function createOPFS (options = {}) {
 
     return guard('get', key, async () => {
       const value = await isPacked(found) ? await unpack(found) : found;
-      done('get', key, { hit: true });
-      return value;
+      return [ value, { hit: true }];
     });
   }
 
   async function set (key, value) {
-    const dir = await open(); if (!dir) return false;
     return guard('set', key, async () => {
       const handle = await dir.getFileHandle(toName(key), { create: true });
       await write(handle, isBinary(value) ? value : pack(value));
-      done('set', key);
-      return true;
-    }, false);
+      return [ true ];
+    });
   }
 
   async function remove (key) {
-    const dir = await open(); if (!dir) return false;
-    return guard('delete', key, async () => {
+    return guard ('delete', key, async () => {
       await dir.removeEntry(toName(key));
-      done('delete', key);
+      return [ true ];
+    }, true);
+  }
+  
+  async function remove (key) {
+    const dir = await open(); if (!dir) return false;
+    try {
+      await dir.removeEntry(toName(key));
       return true;
-    }, false, true);
+    }
+    catch (error) {
+      if (!isNotFound(error)) fail('delete', key, error);
+      return false;
+    }
   }
 
   const has = async (key) => (await file(key)) !== null;
 
   /** { key, lastModified, size } per stored file */
   async function entries (prefix = '') {
-    return guard('entries', prefix, async () => {
+    return guard ('entries', prefix, async () => {
       const list = [];
       for await (const [key, handle] of iterateFiles(prefix)) {
         const { lastModified, size } = await handle.getFile();
         list.push({ key, lastModified, size });
       }
+      
       return list;
-    }, []);
+    }) || [];
   }
 
   async function keys (prefix = '') {
     return guard('keys', prefix, async () => {
-      const list = [];
-      for await (const [key] of iterateFiles(prefix)) list.push(key);
-      return list;
-    }, []);
+      return Array.fromAsync( iterateFiles(prefix), ([key]) => key )) || [];
+    }
   }
 
   /** bytes on disk, summed over the stored files */
@@ -213,14 +218,14 @@ function createOPFS (options = {}) {
 
   // empties the directory but keeps it, so the cached handle stays valid
   async function clear () {
-    const dir = await open(); if (!dir) return false;
     return guard('clear', directory, async () => {
       const names = [];
       for await (const name of dir.keys()) names.push(name);
       for       (const name of names)      await dir.removeEntry(name, { recursive: true });
+      
       done('clear', directory, { removed: names.length });
       return true;
-    }, false);
+    });
   }
 
   // :::::: DRIVER :::::::::::::::::::::::::::::::::::::::::::::::
@@ -230,10 +235,10 @@ function createOPFS (options = {}) {
     return {
       name   : `opfs:${segments.join('/')}`,
       sync   : false,
-      clear  : ()           => clear().then(() => undefined),
-      delete : (key)        => remove(key).then(() => undefined),
-      get    : (key)        => get(key),
-      keys   : (prefix)     => keys(prefix),
+      clear  : ()           => clear     ().then(() => undefined),
+      delete : (key)        => remove (key).then(() => undefined),
+      get    : (key)        => get    (key),
+      keys   : (prefix)     => keys   (prefix),
       set    : async (key, value) => { if (!await set(key, value)) throw new Error(`[bunker] could not write "${key}" to the opfs`); },
     };
   }
