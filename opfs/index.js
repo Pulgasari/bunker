@@ -91,7 +91,7 @@ async function write (handle, data) {
   if (typeof handle.createSyncAccessHandle === 'function') {
     const bytes  = new Uint8Array(await new Blob([data]).arrayBuffer());
     const access = await handle.createSyncAccessHandle();
-    try { access.truncate(0); access.write(bytes, { at: 0 }); access.flush(); }
+    try     { access.truncate(0); access.write(bytes, { at: 0 }); access.flush(); }
     finally { access.close(); }
     return;
   }
@@ -101,7 +101,7 @@ async function write (handle, data) {
 
 // :::::: STORE :::::::::::::::::::::::::::::::::::::::::::::::::
 
-export function createOpfs (options = {}) {
+function createOPFS (options = {}) {
   const { directory = 'bunker', onError = null, onSuccess = null } = options;
   const segments = String(directory).split('/').filter(Boolean);
   const fail     = (operation, key, error)         => { onError?.({ error, key, operation }); };
@@ -124,7 +124,8 @@ export function createOpfs (options = {}) {
     try {
       const handle = await dir.getFileHandle(toName(key));
       return await handle.getFile();
-    } catch (error) {
+    }
+    catch (error) {
       if (!isNotFound(error)) fail('file', key, error);
       return null;
     }
@@ -139,7 +140,8 @@ export function createOpfs (options = {}) {
       const value = await isPacked(found) ? await unpack(found) : found;
       done('get', key, { hit: true });
       return value;
-    } catch (error) { fail('get', key, error); return null; }
+    }
+    catch (error) { fail('get', key, error); return null; }
   }
 
   async function set (key, value) {
@@ -149,7 +151,8 @@ export function createOpfs (options = {}) {
       await write(handle, isBinary(value) ? value : pack(value));
       done('set', key);
       return true;
-    } catch (error) { fail('set', key, error); return false; }
+    }
+    catch (error) { fail('set', key, error); return false; }
   }
 
   async function remove (key) {
@@ -158,7 +161,8 @@ export function createOpfs (options = {}) {
       await dir.removeEntry(toName(key));
       done('delete', key);
       return true;
-    } catch (error) {
+    }
+    catch (error) {
       if (!isNotFound(error)) fail('delete', key, error);
       return false;
     }
@@ -178,7 +182,8 @@ export function createOpfs (options = {}) {
         const { lastModified, size } = await handle.getFile();
         list.push({ key, lastModified, size });
       }
-    } catch (error) { fail('entries', prefix, error); }
+    }
+    catch (error) { fail('entries', prefix, error); }
     return list;
   }
 
@@ -202,10 +207,11 @@ export function createOpfs (options = {}) {
     try {
       const names = [];
       for await (const name of dir.keys()) names.push(name);
-      for (const name of names) await dir.removeEntry(name, { recursive: true });
+      for       (const name of names)      await dir.removeEntry(name, { recursive: true });
       done('clear', directory, { removed: names.length });
       return true;
-    } catch (error) { fail('clear', directory, error); return false; }
+    }
+    catch (error) { fail('clear', directory, error); return false; }
   }
 
   // :::::: DRIVER :::::::::::::::::::::::::::::::::::::::::::::::
@@ -215,10 +221,10 @@ export function createOpfs (options = {}) {
     return {
       name   : `opfs:${segments.join('/')}`,
       sync   : false,
-      clear  : ()           => clear().then(() => undefined),
-      delete : (key)        => remove(key).then(() => undefined),
-      get    : (key)        => get(key),
-      keys   : (prefix)     => keys(prefix),
+      clear  :       ()           => clear().then(() => undefined),
+      delete :       (key)        => remove(key).then(() => undefined),
+      get    :       (key)        => get(key),
+      keys   :       (prefix)     => keys(prefix),
       set    : async (key, value) => { if (!await set(key, value)) throw new Error(`[bunker] could not write "${key}" to the opfs`); },
     };
   }
@@ -230,5 +236,11 @@ export function createOpfs (options = {}) {
   };
 }
 
-export { isSupported };
-export default createOpfs;
+// :::::: ALIASES
+
+const createOpfs = createOPFS;
+
+// :::::: EXPORT
+
+export { createOPFS, isSupported };
+export default createOPFS;
