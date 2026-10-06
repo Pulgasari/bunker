@@ -26,24 +26,35 @@ export function assertDriver (value, label = 'driver') {
   throw new TypeError(`[bunker] ${label} is missing: ${missing.join(', ')}`);
 }
 
+// the async contract over a synchronous surface (clearSync, deleteSync, getSync,
+// keysSync, setSync), for the drivers that are synchronous underneath
+export function asyncDriver (surface) {
+  return {
+    clear  : ()            => { surface.clearSync();          return Promise.resolve(); },
+    delete : (key)         => { surface.deleteSync(key);      return Promise.resolve(); },
+    get    : (key)         => Promise.resolve(surface.getSync(key)),
+    keys   : (prefix = '') => Promise.resolve(surface.keysSync(prefix)),
+    set    : (key, value)  => { surface.setSync(key, value);  return Promise.resolve(); },
+  };
+}
+
 export function createMemoryDriver () {
   const map = new Map;
+
+  const surface = {
+    clearSync  : ()            => { map.clear(); },
+    deleteSync : (key)         => { map.delete(key); },
+    getSync    : (key)         => map.has(key) ? map.get(key) : null,
+    keysSync   : (prefix = '') => [...map.keys()].filter(key => key.startsWith(prefix)),
+    setSync    : (key, value)  => { map.set(key, value); },
+  };
 
   return {
     name : 'memory',
     sync : true,
-
     get size () { return map.size; },
-
-    deleteSync : (key) => { map.delete(key); },
-    getSync    : (key) => map.has(key) ? map.get(key) : null,
-    setSync    : (key, value) => { map.set(key, value); },
-
-    clear  : ()             => { map.clear(); return Promise.resolve(); },
-    delete : (key)          => { map.delete(key); return Promise.resolve(); },
-    get    : (key)          => Promise.resolve(map.has(key) ? map.get(key) : null),
-    set    : (key, value)   => { map.set(key, value); return Promise.resolve(); },
-    keys   : (prefix = '')  => Promise.resolve([...map.keys()].filter(key => key.startsWith(prefix))),
+    ...surface,
+    ...asyncDriver(surface),
   };
 }
 
@@ -60,7 +71,7 @@ export function withKeyspace (driver, keyspace = NO_KEYSPACE) {
     name : `${driver.name ?? 'driver'}+keyspace`,
     sync : Boolean(driver.sync),
 
-    clear  : async ()            => { for (const key of await wrapped.keys()) await driver.delete(encode(key)); },
+    clear  : async ()            => { await Promise.all((await wrapped.keys()).map(key => driver.delete(encode(key)))); },
     delete : (key)               => driver.delete(encode(key)),
     get    : (key)               => driver.get(encode(key)),
     set    : (key, value)        => driver.set(encode(key), value),

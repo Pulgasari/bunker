@@ -31,6 +31,8 @@ export interface StorageOptions {
   version?: number;
   /** Called instead of throwing. Writes fail on a full quota far more often than anything else. */
   onError?: (error: StorageError) => void;
+  /** Called after every operation that went through, with what it did. */
+  onSuccess?: (success: { detail: unknown; key: string | null; operation: string }) => void;
 }
 
 export interface Storage extends SyncDriver {

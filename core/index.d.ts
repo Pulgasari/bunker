@@ -94,3 +94,48 @@ export declare const codecs: {
   text: Codec<string>;
   none: Codec<unknown>;
 };
+
+// :::::: HELPERS
+
+/** The async {@link Driver} methods over a synchronous surface. */
+export declare function asyncDriver(surface: {
+  clearSync(): void;
+  deleteSync(key: string): unknown;
+  getSync<T = unknown>(key: string): T | null;
+  keysSync(prefix?: string): string[];
+  setSync<T = unknown>(key: string, value: T): unknown;
+}): Pick<Driver, 'clear' | 'delete' | 'get' | 'keys' | 'set'>;
+
+/** Property sugar over a store, kept off the store so keys never shadow its methods. */
+export declare function proxyOf(store: {
+  delete(key: string): unknown;
+  get(key: string): unknown;
+  has?(key: string): boolean;
+  keys?(): string[];
+  set(key: string, value: unknown): unknown;
+}): Record<string, unknown>;
+
+export interface ReportOptions {
+  /** Whether an error is expected and not reported, e.g. a missing file. */
+  quiet?: (error: unknown) => boolean;
+  /** What onSuccess gets as `detail`, from the result. */
+  detail?: (result: any) => unknown;
+  /** For `over()`: the key to report, from the arguments. Defaults to the first one. */
+  key?: (...args: any[]) => unknown;
+}
+
+export interface Report {
+  /** Runs one operation: reports success, turns a throw or rejection into a report and `fallback`. */
+  attempt<T, F>(operation: string, key: unknown, fallback: F, run: () => T, options?: ReportOptions): T extends Promise<infer R> ? Promise<R | F> : T | F;
+  done(operation: string, key: unknown, detail?: unknown): void;
+  fail(operation: string, key: unknown, error: unknown): void;
+  /** `attempt` bound to a resource that opens lazily. No resource is the fallback. */
+  over<R>(open: () => Promise<R | null>): <F>(operation: string, fallback: F, options?: ReportOptions) =>
+    <A extends unknown[], T>(run: (resource: R, ...args: A) => T | Promise<T>) => (...args: A) => Promise<T | F>;
+}
+
+/** How a store tells about its operations: onError and onSuccess, never a throw at the caller. */
+export declare function createReport(options?: {
+  onError?: (error: { error: unknown; key: unknown; operation: string }) => void;
+  onSuccess?: (success: { detail: unknown; key: unknown; operation: string }) => void;
+}): Report;

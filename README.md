@@ -15,13 +15,13 @@ the one property that decides what you can build on them:
 bunker gives each one a package, and keeps caching *policy* out of all of them.
 
 ```
-@bunker/core      driver contract, keyspaces, codecs
+@bunker/core      driver contract, keyspaces, codecs, reports, proxies
 @bunker/db        IndexedDB
 @bunker/storage   localStorage / sessionStorage, synchronous
 @bunker/cache     Cache API, window and service worker
 @bunker/opfs      origin private file system, files as values
 @bunker/policy    TTL and stale-while-revalidate over any driver
-@bunker/utils     memoize, single flight, content hash, quota, cross-tab
+@bunker/utils     memoize, once, single flight, emitter, content hash, quota, cross-tab
 @bunker/kit       the six above, pre-wired
 ```
 

@@ -94,3 +94,20 @@ export interface SingleFlight {
 
 /** One pending promise per key, so concurrent misses collapse into a single call. */
 export declare function createSingleFlight(): SingleFlight;
+
+// :::::: emitter.js
+
+export interface Emitter<A extends unknown[] = [unknown]> {
+  readonly size: number;
+  clear(): void;
+  emit(...args: A): void;
+  /** Returns the unsubscribe. */
+  subscribe(listener: (...args: A) => void): () => boolean;
+}
+
+export declare function createEmitter<A extends unknown[] = [unknown]>(): Emitter<A>;
+
+// :::::: once.js
+
+/** The first result of an async factory, shared. A rejection is forgotten, so the next call retries. */
+export declare function once<T>(factory: () => T | Promise<T>): (() => Promise<T>) & { reset(): void };

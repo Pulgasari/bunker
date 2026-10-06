@@ -10,11 +10,13 @@
   that persists is a driver and belongs in a backend package.
 */
 
-export { createChannel }   from './channel.js';
-export { contentHash }     from './hash.js';
-export { lazy }            from './lazy.js';
-export { lru }             from './lru.js';
-export { memoize }         from './memoize.js';
+export { createChannel }      from './channel.js';
+export { createEmitter }      from './emitter.js';
+export { contentHash }        from './hash.js';
+export { lazy }               from './lazy.js';
+export { lru }                from './lru.js';
+export { memoize }            from './memoize.js';
+export { once }               from './once.js';
 export { createSingleFlight } from './singleFlight.js';
 
 export * as quota from './quota.js';

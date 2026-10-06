@@ -1,7 +1,8 @@
 // @bunker/storage
 // @ts-self-types="./index.d.ts"
 
-import { NO_KEYSPACE, codecs, createKeyspace } from './../core/index.js'; // from '@bunker/core';
+import { NO_KEYSPACE, asyncDriver, codecs, createKeyspace, createReport, proxyOf } from './../core/index.js';     // from '@bunker/core';
+import { createEmitter }                                                              from './../utils/emitter.js'; // from '@bunker/utils/emitter.js';
 
 const PROBE = '__bunker_probe__';
 
@@ -22,11 +23,10 @@ function createMemoryArea (area) {
 
   return {
     persistent : false,
-    key        : (i)          => [...map.keys()][i] ?? null,
     getItem    : (key)        => map.has(key) ? map.get(key) : null,
-    setItem    : (key, value) => { map.set(key, String(value)); },
+    names      : ()           => [...map.keys()],
     removeItem : (key)        => { map.delete(key); },
-    get length () { return map.size; },
+    setItem    : (key, value) => { map.set(key, String(value)); },
   };
 }
 
@@ -42,11 +42,10 @@ function resolveArea (area) {
 
     return {
       persistent : true,
-      key        : (i)          => native.key(i),
       getItem    : (key)        => native.getItem(key),
-      setItem    : (key, value) => native.setItem(key, value),
+      names      : ()           => Array.from({ length: native.length }, (_, index) => native.key(index)),
       removeItem : (key)        => native.removeItem(key),
-      get length () { return native.length; },
+      setItem    : (key, value) => native.setItem(key, value),
     };
   } 
   // private mode, a blocked cookie policy, or a full disk. persistence is gone,
@@ -61,83 +60,70 @@ function createStorage (options = {}) {
     area      = 'local',
     codec     = codecs.json,
     namespace = null,
-    version   = 1,
     onError   = null,
+    onSuccess = null,
+    version   = 1,
   } = options;
 
-  const backing   = resolveArea(area);
-  const keyspace  = namespace ? createKeyspace({ namespace, version }) : NO_KEYSPACE;
-  const listeners = new Set;
-  const fail      = (operation, key, error) => { onError?.({ error, key, operation }); };
-  const emit      = (change)                => { for (const listener of listeners) listener(change); };
+  const backing  = resolveArea(area);
+  const keyspace = namespace ? createKeyspace({ namespace, version }) : NO_KEYSPACE;
+  const changes  = createEmitter();
+  const { attempt } = createReport({ onError, onSuccess });
 
   // the native storage event fires in every *other* tab of the origin,
   // and only for localStorage. our own writes are emitted separately,
   // so a single subscribe() sees both without the caller caring which tab moved.
   const onStorageEvent = (event) => {
     if (event.storageArea && event.storageArea !== globalThis.localStorage) return;
-    if (event.key === null) return emit({ key: null, source: 'remote', value: null });
+    if (event.key === null) return changes.emit({ key: null, source: 'remote', value: null });
 
     const key = keyspace.decode(event.key);
     if (key === null) return;
 
-    emit({ key, source: 'remote', value: event.newValue === null ? null : codec.decode(event.newValue) });
+    changes.emit({ key, source: 'remote', value: event.newValue === null ? null : codec.decode(event.newValue) });
   };
 
   if (area === 'local' && backing.persistent) globalThis.addEventListener?.('storage', onStorageEvent);
 
-  // :::::: sync core. everything else is a wrapper around these three.
+  // :::::: sync core. everything else is a wrapper around these.
 
   function getSync (key, fallback = null) {
-    try {
+    return attempt('get', key, fallback, () => {
       const raw = backing.getItem(keyspace.encode(key));
-      if (raw === null) return fallback;
-      const value = codec.decode(raw);
+      const value = raw === null ? null : codec.decode(raw);
       return value === null ? fallback : value;
-    } catch (error) {
-      fail('get', key, error);
-      return fallback;
-    }
+    });
   }
 
+  // a false is most often QuotaExceededError. the caller decides,
+  // a store write is never worth taking the page down for.
   function setSync (key, value) {
-    try {
+    return attempt('set', key, false, () => {
       backing.setItem(keyspace.encode(key), codec.encode(value));
-      emit({ key, source: 'local', value });
+      changes.emit({ key, source: 'local', value });
       return true;
-    } 
-    // most often QuotaExceededError. the caller gets a false and decides;
-    // a store write is never worth taking the page down for.
-    catch (error) { fail('set', key, error); return false; }
+    });
   }
 
   function deleteSync (key) {
-    try {
+    return attempt('delete', key, false, () => {
       backing.removeItem(keyspace.encode(key));
-      emit({ key, source: 'local', value: null });
+      changes.emit({ key, source: 'local', value: null });
       return true;
-    } catch (error) {
-      fail('delete', key, error);
-      return false;
-    }
+    });
   }
 
-  // :::::: enumeration
+  // note: a stored `null` is indistinguishable from an absent key on read,
+  // hasSync() is the way to tell them apart.
+  const hasSync = (key) => attempt('has', key, false, () => backing.getItem(keyspace.encode(key)) !== null);
+
+  // :::::: enumeration. one walk over the area, the keys and the sweep filter it
+
+  const names = (operation, key) => attempt(operation, key, [], () => backing.names().filter(full => full !== null));
 
   function keysSync (prefix = '') {
     const scope = keyspace.prefix + prefix;
-    const found = [];
-
-    try {
-      for (let index = 0; index < backing.length; index++) {
-        const full = backing.key(index);
-        if (full !== null && full.startsWith(scope)) found.push(keyspace.decode(full));
-      }
-    } catch (error) {
-      fail('keys', prefix, error);
-    }
-
-    return found.filter(key => key !== null);
+    return names('keys', prefix).filter(full => full.startsWith(scope)).map(keyspace.decode).filter(key => key !== null);
   }
 
   function clearSync () {
@@ -148,22 +134,12 @@ function createStorage (options = {}) {
   // boot after bumping `version`; without it they sit there until the quota fills.
   function sweepSync () {
     if (keyspace === NO_KEYSPACE) return 0;
-
-    const doomed = [];
-    try {
-      for (let index = 0; index < backing.length; index++) {
-        const full = backing.key(index);
-        if (full !== null && keyspace.stale(full)) doomed.push(full);
-      }
-    }
-    catch (error) { fail('sweep', null, error); }
-
-    for (const full of doomed) {
-      try       { backing.removeItem(full); } 
-      catch (e) { fail('sweep', full, e); }
-    }
+    const doomed = names('sweep', null).filter(keyspace.stale);
+    for (const full of doomed) attempt('sweep', full, null, () => backing.removeItem(full));
     return doomed.length;
   }
+
+  const surface = { clearSync, deleteSync, getSync, hasSync, keysSync, setSync, sweepSync };
 
   const storage = {
     name : `storage:${area}`,
@@ -172,29 +148,15 @@ function createStorage (options = {}) {
     get persistent () { return backing.persistent; },
 
     // synchronous surface. the reason this package exists.
-    clearSync, deleteSync, getSync, keysSync, setSync, sweepSync,
-
-    // note: a stored `null` is indistinguishable from an absent key on read,
-    // hasSync() is the way to tell them apart.
-    hasSync (key) {
-      try       { return backing.getItem(keyspace.encode(key)) !== null; }
-      catch (e) { fail('has', key, e); return false; }
-    },
+    ...surface,
 
     // driver contract, so @bunker/policy and friends can take this as a backend
-    clear  : ()            => { clearSync(); return Promise.resolve(); },
-    delete : (key)         => { deleteSync(key); return Promise.resolve(); },
-    get    : (key)         => Promise.resolve(getSync(key)),
-    keys   : (prefix = '') => Promise.resolve(keysSync(prefix)),
-    set    : (key, value)  => { setSync(key, value); return Promise.resolve(); },
+    ...asyncDriver(surface),
 
-    subscribe (listener) {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
+    subscribe : changes.subscribe,
 
     dispose () {
-      listeners.clear();
+      changes.clear();
       if (area === 'local' && backing.persistent) globalThis.removeEventListener?.('storage', onStorageEvent);
     },
   };
@@ -209,19 +171,13 @@ function createStorage (options = {}) {
 // :::::: PROXY ::::::::::::::::::::::::::::::::::::::::::::::::::
 
 // store.proxy.theme = 'oled'  /  delete store.proxy.theme  /  'theme' in store.proxy
-// kept off the storage object itself on purpose: a key named `get` or `keys` would
-// otherwise be shadowed by the method of the same name.
-function createProxy (storage) {
-  return new Proxy (Object.create(null), {
-    get            : (_, key)        => typeof key === 'symbol' ? undefined : storage.getSync(key),
-    set            : (_, key, value) => { storage.setSync(key, value); return true; },
-    has            : (_, key)        => typeof key !== 'symbol' && storage.hasSync(key),
-    deleteProperty : (_, key)        => { storage.deleteSync(key); return true; },
-    ownKeys        : ()              => storage.keysSync(),
-    getOwnPropertyDescriptor : (_, key) =>
-      storage.hasSync(key) ? { configurable: true, enumerable: true, value: storage.getSync(key) } : undefined,
-  });
-}
+const createProxy = (storage) => proxyOf({
+  delete : storage.deleteSync,
+  get    : storage.getSync,
+  has    : storage.hasSync,
+  keys   : storage.keysSync,
+  set    : storage.setSync,
+});
 
 // :::::: DEFAULTS :::::::::::::::::::::::::::::::::::::::::::::::
 

@@ -18,6 +18,9 @@ anything not listed here is read as a key,
 so a method left out would silently turn into a lookup.
 */
 
+import { createEmitter }              from './../utils/emitter.js'; // from '@bunker/utils/emitter.js';
+import { requestOf, transactionOf }   from './idb.js';
+
 // :::::: CONSTANTS
 
 const RANGE_END = '￿';
@@ -52,7 +55,7 @@ export class BunkerDB {
   #queue  = Promise.resolve(); 
   #tables = new Set;
   #channel;             // undefined = not armed yet, null = no broadcastchannel in this runtime
-  #listeners = new Set; // [table|null, handler] tuples, the tuple is the unsubscribe identity
+  #changes = createEmitter();
   #origin = (globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2));
   #outbox = null;       // changes buffered for this microtask, null while nothing is pending
 
@@ -155,21 +158,22 @@ export class BunkerDB {
     // callers below turn this into their own empty ([] / {} / null / 0).
     if (!db.objectStoreNames.contains(table)) return undefined;
 
-    return new Promise ((resolve, reject) => {
-      let   value   = undefined;
-      const tx      = db.transaction(table, mode);
-      const collect = result => value = result;
+    // a callback returns its request, whose result is the value, or hands the
+    // value to collect() itself (a cursor, a read before a write)
+    let   value   = undefined;
+    const tx      = db.transaction(table, mode);
+    const ended   = transactionOf(tx, table);
+    const collect = result => value = result;
 
-      const request = callback(tx.objectStore(table), collect, reject);
-      if (request instanceof IDBRequest) {
-        request.onsuccess = () => collect (request.result);
-        request.onerror   = () => reject  (request.error);
-      }
+    let failed = null;
+    const reject = error => { failed ??= error; try { tx.abort(); } catch {} };
 
-      tx.oncomplete = () => resolve(value);
-      tx.onabort    = () => reject(tx.error ?? new DOMException(`[bunker] "${table}" transaction aborted`, 'AbortError'));
-      tx.onerror    = () => reject(tx.error);
-    });
+    const request = callback(tx.objectStore(table), collect, reject);
+    if (request instanceof IDBRequest) requestOf(request).then(collect, reject);
+
+    await ended.catch(error => { throw failed ?? error; });
+    if (failed) throw failed;
+    return value;
   }
 
   // :::::: SCHEMA ::::::::::::::::::::::::::::::::::::::::::::::
@@ -225,12 +229,14 @@ export class BunkerDB {
 
   async destroy () {
     this.close();
-    return this.#lock(() => new Promise ((resolve, reject) => {
+    return this.#lock(async () => {
       const request = indexedDB.deleteDatabase(this.#dbName);
-      request.onsuccess = () => { this.#tables = new Set; this.#emit({ table: null, type: 'destroy', keys: NO_KEYS }); resolve(true); };
-      request.onerror   = () => reject(request.error);
-      request.onblocked = () => reject(new Error(`[bunker] "${this.#dbName}": delete blocked by another connection`));
-    }));
+      const blocked = new Promise((_, reject) => { request.onblocked = () => reject(new Error(`[bunker] "${this.#dbName}": delete blocked by another connection`)); });
+      await Promise.race([requestOf(request), blocked]);
+      this.#tables = new Set;
+      this.#emit({ table: null, type: 'destroy', keys: NO_KEYS });
+      return true;
+    });
   }
 
   async #scan (table, spec, limit = Infinity) {
@@ -318,15 +324,9 @@ export class BunkerDB {
   // reads and writes in one transaction, so two tabs cannot interleave between them
   async toggle (table, key) {
     const next = await this.task(table, 'readwrite', (os, collect, reject) => {
-      const read = os.get(key);
-
-      read.onsuccess = () => {
-        const value = !read.result;
-        const write = os.put(value, key);
-        write.onsuccess = () => collect(value);
-        write.onerror   = () => reject(write.error);
-      };
-      read.onerror = () => reject(read.error);
+      requestOf(os.get(key))
+        .then(current => requestOf(os.put(!current, key)).then(() => collect(!current)))
+        .catch(reject);
     });
 
     this.#emit({ table, type: 'set', keys: [key] });
@@ -341,16 +341,13 @@ export class BunkerDB {
 
     this.#channel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel(`bunker:${this.#dbName}`) : null;
     if (this.#channel) this.#channel.onmessage = (event) => this.#notify(event.data);
+    this.#channel?.unref?.();   // node only: an idle channel must not keep the process alive
     return this.#channel;
   }
 
   // handlers run in a microtask, so a throwing handler cannot reject the write
   // that triggered it and cannot swallow its siblings.
-  #notify (change) {
-    for (const [table, handler] of this.#listeners) {
-      if (!table || table === change.table) queueMicrotask(() => handler(change));
-    }
-  }
+  #notify (change) { this.#changes.emit(change); }
 
   // changes raised in the same turn are merged before anyone hears about them: one
   // write of a podcast plus one of its episodes is two operations but one update as
@@ -389,10 +386,11 @@ export class BunkerDB {
     if (isFn(table)) [table, handler] = [null, table];
     if (!isFn(handler)) throw new TypeError('[bunker] onChange expects a handler function');
 
-    const entry = [table, handler];
-    this.#listeners.add(entry);
+    const unsubscribe = this.#changes.subscribe(change => {
+      if (!table || table === change.table) queueMicrotask(() => handler(change));
+    });
     this.#bus(); // arm now, otherwise remote changes are missed until the first local write
-    return () => this.#listeners.delete(entry);
+    return unsubscribe;
   }
 
   // :::::: DRIVER :::::::::::::::::::::::::::::::::::::::::::::::
