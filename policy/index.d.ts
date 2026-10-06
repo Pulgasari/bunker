@@ -40,6 +40,8 @@ export interface PolicyOptions {
   maxEntries?: number;
   namespace?: string;
   onError?: (error: PolicyError) => void;
+  /** Called after every L2 operation that went through. */
+  onSuccess?: (success: { detail: unknown; key: string | null; operation: string }) => void;
   /** Grace window past `ttl` in which an entry may still be served while revalidating. */
   staleTtl?: number;
   /** Default freshness in milliseconds. `null` means entries never age. */

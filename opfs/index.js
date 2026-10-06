@@ -16,10 +16,14 @@
   read what you need before overwriting.
 */
 
+import { createReport } from './../core/index.js'; // from '@bunker/core';
+import { once }         from './../utils/once.js'; // from '@bunker/utils/once.js';
+
 const BINARY  = '$bunker:binary';
-const MAGIC   = [0x42, 0x55, 0x4e, 0x4b, 0x45, 0x52, 0x00, 0x01];   // "BUNKER" 0 1
-const HEADER  = MAGIC.length + 4;                                   // magic, uint32 header length
-const SWAP    = /\.crswap$/;                                        // chrome's pending write, not an entry
+const MAGIC   = new Uint8Array([0x42, 0x55, 0x4e, 0x4b, 0x45, 0x52, 0x00, 0x01]);   // "BUNKER" 0 1
+const HEADER  = MAGIC.length + 4;                                                   // magic, uint32 header length
+const SWAP    = /\.crswap$/;                                                        // chrome's pending write, not an entry
+const ENCODER = new TextEncoder;
 
 const isSupported = () => typeof navigator !== 'undefined' && typeof navigator.storage?.getDirectory === 'function';
 const isBinary    = (value) => value instanceof Blob || value instanceof ArrayBuffer || ArrayBuffer.isView(value);
@@ -45,7 +49,8 @@ function pack (value) {
     return { [BINARY]: parts.length - 1 };
   }) ?? 'null';
 
-  const header = new TextEncoder().encode(JSON.stringify({ parts: parts.map(({ offset, size, type }) => [offset, size, type]), value: JSON.parse(body) }));
+  // the value is json already, it goes into the header as it is instead of parsed and written again
+  const header = ENCODER.encode(`{"parts":${JSON.stringify(parts.map(({ offset, size, type }) => [offset, size, type]))},"value":${body}}`);
   const prefix = new Uint8Array(HEADER);
   prefix.set(MAGIC);
   new DataView(prefix.buffer).setUint32(MAGIC.length, header.length, true);
@@ -104,115 +109,77 @@ async function write (handle, data) {
 function createOPFS (options = {}) {
   const { directory = 'bunker', onError = null, onSuccess = null } = options;
   const segments = String(directory).split('/').filter(Boolean);
-  const fail     = (operation, key, error)         => { onError?.({ error, key, operation }); };
-  const done     = (operation, key, detail = null) => { onSuccess?.({ detail, key, operation }); };
-  let opened = null;
+  const { attempt, done, over } = createReport({ onError, onSuccess });
 
-  /** the directory handle, created on first use. null without opfs */
-  function open () {
-    if (!isSupported()) return Promise.resolve(null);
-    return opened ??= (async () => {
-      let handle = await navigator.storage.getDirectory();
-      for (const segment of segments) handle = await handle.getDirectoryHandle(segment, { create: true });
-      return handle;
-    })().catch(error => { fail('open', directory, error); opened = null; return null; });
+  // the directory handle, created on first use. a failure is reported and tried again
+  const opening = once(async () => {
+    let handle = await navigator.storage.getDirectory();
+    for (const segment of segments) handle = await handle.getDirectoryHandle(segment, { create: true });
+    return handle;
+  });
+
+  /** the directory handle, null without opfs */
+  const open = () => isSupported() ? attempt('open', directory, null, opening) : Promise.resolve(null);
+  const op   = over(open);
+
+  // the stored files as [key, handle], without chrome's pending writes
+  async function* files (dir, prefix) {
+    for await (const [name, handle] of dir.entries()) {
+      if (handle.kind !== 'file' || SWAP.test(name)) continue;
+      const key = toKey(name);
+      if (key.startsWith(prefix)) yield [key, handle];
+    }
   }
 
   /** the stored file itself, null when missing */
-  async function file (key) {
-    const dir = await open(); if (!dir) return null;
-    try {
-      const handle = await dir.getFileHandle(toName(key));
-      return await handle.getFile();
-    }
-    catch (error) {
-      if (!isNotFound(error)) fail('file', key, error);
-      return null;
-    }
-  }
+  const file = op('file', null, { quiet: isNotFound })(
+    async (dir, key) => (await dir.getFileHandle(toName(key))).getFile()
+  );
 
   /** bytes come back as a File, everything else as it was stored */
   async function get (key) {
     const found = await file(key);
     if (!found) { done('get', key, { hit: false }); return null; }
-
-    try {
-      const value = await isPacked(found) ? await unpack(found) : found;
-      done('get', key, { hit: true });
-      return value;
-    }
-    catch (error) { fail('get', key, error); return null; }
+    return attempt('get', key, null, async () => await isPacked(found) ? unpack(found) : found, { detail: () => ({ hit: true }) });
   }
 
-  async function set (key, value) {
-    const dir = await open(); if (!dir) return false;
-    try {
-      const handle = await dir.getFileHandle(toName(key), { create: true });
-      await write(handle, isBinary(value) ? value : pack(value));
-      done('set', key);
-      return true;
-    }
-    catch (error) { fail('set', key, error); return false; }
-  }
+  const set = op('set', false)(async (dir, key, value) => {
+    await write(await dir.getFileHandle(toName(key), { create: true }), isBinary(value) ? value : pack(value));
+    return true;
+  });
 
-  async function remove (key) {
-    const dir = await open(); if (!dir) return false;
-    try {
-      await dir.removeEntry(toName(key));
-      done('delete', key);
-      return true;
-    }
-    catch (error) {
-      if (!isNotFound(error)) fail('delete', key, error);
-      return false;
-    }
-  }
+  const remove = op('delete', false, { quiet: isNotFound })(
+    async (dir, key) => { await dir.removeEntry(toName(key)); return true; }
+  );
 
   const has = async (key) => (await file(key)) !== null;
 
   /** { key, lastModified, size } per stored file */
-  async function entries (prefix = '') {
-    const dir = await open(); if (!dir) return [];
+  const entries = op('entries', [])(async (dir, prefix = '') => {
     const list = [];
-    try {
-      for await (const [name, handle] of dir.entries()) {
-        if (handle.kind !== 'file' || SWAP.test(name)) continue;
-        const key = toKey(name);
-        if (!key.startsWith(prefix)) continue;
-        const { lastModified, size } = await handle.getFile();
-        list.push({ key, lastModified, size });
-      }
+    for await (const [key, handle] of files(dir, prefix)) {
+      const { lastModified, size } = await handle.getFile();
+      list.push({ key, lastModified, size });
     }
-    catch (error) { fail('entries', prefix, error); }
     return list;
-  }
+  });
 
-  async function keys (prefix = '') {
-    const dir = await open(); if (!dir) return [];
+  const keys = op('keys', [])(async (dir, prefix = '') => {
     const list = [];
-    try {
-      for await (const [name, handle] of dir.entries()) {
-        if (handle.kind === 'file' && !SWAP.test(name) && toKey(name).startsWith(prefix)) list.push(toKey(name));
-      }
-    } catch (error) { fail('keys', prefix, error); }
+    for await (const [key] of files(dir, prefix)) list.push(key);
     return list;
-  }
+  });
 
   /** bytes on disk, summed over the stored files */
   const size = async (prefix = '') => (await entries(prefix)).reduce((total, entry) => total + entry.size, 0);
 
   // empties the directory but keeps it, so the cached handle stays valid
-  async function clear () {
-    const dir = await open(); if (!dir) return false;
-    try {
-      const names = [];
-      for await (const name of dir.keys()) names.push(name);
-      for       (const name of names)      await dir.removeEntry(name, { recursive: true });
-      done('clear', directory, { removed: names.length });
-      return true;
-    }
-    catch (error) { fail('clear', directory, error); return false; }
-  }
+  const clear = op('clear', false, { detail: removed => ({ removed }), key: () => directory })(async (dir) => {
+    const names = [];
+    for await (const name of dir.keys()) names.push(name);
+    await Promise.all(names.map(name => dir.removeEntry(name, { recursive: true })));
+    return names.length;
+  });
 
   // :::::: DRIVER :::::::::::::::::::::::::::::::::::::::::::::::
 
@@ -231,8 +198,9 @@ function createOPFS (options = {}) {
 
   return {
     directory : segments.join('/'),
+    clear     : async () => (await clear()) !== false,
     delete    : remove,
-    clear, driver, entries, file, get, has, isSupported, keys, open, set, size,
+    driver, entries, file, get, has, isSupported, keys, open, set, size,
   };
 }
 

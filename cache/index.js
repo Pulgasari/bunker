@@ -1,7 +1,9 @@
 // @bunker/cache
 // @ts-self-types="./index.d.ts"
 
-import { createSingleFlight } from './../utils/singleFlight.js'; // from '@bunker/utils/singleFlight.js';
+import { createReport, proxyOf } from './../core/index.js';             // from '@bunker/core';
+import { once }                  from './../utils/once.js';             // from '@bunker/utils/once.js';
+import { createSingleFlight }    from './../utils/singleFlight.js';     // from '@bunker/utils/singleFlight.js';
 
 /*
   the cache api stores Request/Response pairs rather than values, which is exactly
@@ -52,78 +54,38 @@ const ageOf = (response) => {
 
 // :::::: FILES ::::::::::::::::::::::::::::::::::::::::::::::::::
 
-/*
-class BunkerCache {
-  name    = 'bunker';
-  onError = null;
-
-  constructor (options = {}) {
-    this.name    = options.name    ?? 'bunker';
-    this.onError = options.onError ?? null;
-  }
-
-  #fail = (operation, key, error) => { this.onError?.({ error, key, operation }); };
-}
-*/
-
 export function createCache (options = {}) {
   const { name = 'bunker', onError = null, onSuccess = null } = options;
-  const once = createSingleFlight();
-  const fail = (operation, key, error)         => { onError?.({ error, key, operation }); };
-  const done = (operation, key, detail = null) => { onSuccess?.({ detail, key, operation }); };
-  let opened = null;
+  const flight = createSingleFlight();
+  const { attempt, done, fail, over } = createReport({ onError, onSuccess });
 
-  function open () {
-    if (!isSupported()) return Promise.resolve(null);
-    return opened ??= caches.open(name)
-      .then(cache  => { done('open', name); return cache; })
-      .catch(error => { fail('open', name, error); opened = null; return null; });
-  }
+  // opened once, a failure is reported and tried again on the next call
+  const opening = once(async () => { const cache = await caches.open(name); done('open', name); return cache; });
+  const open    = () => isSupported() ? attempt('open', name, null, opening) : Promise.resolve(null);
+  const op      = over(open);
 
-  async function match (request) {
-    const cache = await open(); if (!cache) return null;
-    try {
-      const hit = (await cache.match(request)) ?? null;
-      done('match', urlOf(request), { hit: hit !== null });
-      return hit;
-    } catch (e) { fail('match', urlOf(request), e); return null; }
-  }
+  const match = op('match', null, { detail: hit => ({ hit: hit !== null }), key: urlOf })(
+    async (cache, request) => (await cache.match(request)) ?? null
+  );
 
-  async function put (request, response) {
-    const cache = await open(); if (!cache) return false;
-    // an opaque response has status 0 and cache.put() rejects on it outright
-    if (response.type === 'opaque' || response.status === 0) return false;
+  // an opaque response has status 0 and cache.put() rejects on it outright
+  const store = op('put', false, { key: urlOf })(
+    async (cache, request, response) => { await cache.put(request, response); return true; }
+  );
+  const put = (request, response) => response.type === 'opaque' || response.status === 0 ? Promise.resolve(false) : store(request, response);
 
-    try       { await cache.put(request, response); done('put', urlOf(request)); return true; }
-    catch (e) { fail('put', urlOf(request), e);                                  return false; }
-  }
+  const remove = op('delete', false, { detail: deleted => ({ deleted }), key: urlOf })(
+    (cache, request) => cache.delete(request)
+  );
 
-  async function remove (request) {
-    const cache = await open(); if (!cache) return false;
-    try {
-      const deleted = await cache.delete(request);
-      done('delete', urlOf(request), { deleted });
-      return deleted;
-    } catch (e) { fail('delete', urlOf(request), e); return false; }
-  }
-
-  async function keys () {
-    const cache = await open(); if (!cache) return [];
-    try {
-      const stored = await cache.keys();
-      done('keys', null, { count: stored.length });
-      return stored;
-    } catch (e) { fail('keys', null, e); return []; }
-  }
+  const keys = op('keys', [], { detail: stored => ({ count: stored.length }), key: () => null })(
+    cache => cache.keys()
+  );
 
   async function clear () {
     if (!isSupported()) return false;
-    opened = null;
-    try {
-      const deleted = await caches.delete(name);
-      done('clear', name, { deleted });
-      return deleted;
-    } catch (e) { fail('clear', name, e); return false; }
+    opening.reset();
+    return attempt('clear', name, false, () => caches.delete(name), { detail: deleted => ({ deleted }) });
   }
 
   // :::::: fetch + transform + store
@@ -149,7 +111,7 @@ export function createCache (options = {}) {
     }
   }
 
-  async function store (request, response, transform, type) {
+  async function keep (request, response, transform, type) {
     const meta = {
       etag     : response.headers.get('etag'),
       modified : response.headers.get('last-modified'),
@@ -189,7 +151,7 @@ export function createCache (options = {}) {
     const cached = await match(request);
     if (cached && ttl > 0 && ageOf(cached) < ttl) return cached;
 
-    const revalidate = () => once(urlOf(request), async () => {
+    const revalidate = () => flight(urlOf(request), async () => {
       const response = await fetch(conditional(request, cached));
 
       // unchanged: keep the stored body, just refresh its age. re-read from the
@@ -208,7 +170,7 @@ export function createCache (options = {}) {
       }
 
       if (!response.ok) throw new Error(`[bunker] ${response.status} ${response.statusText} for ${urlOf(request)}`);
-      const stored = await store(request, response, transform, type);
+      const stored = await keep(request, response, transform, type);
       done('revalidate', urlOf(request), { notModified: false, status: response.status });
       return stored;
     });
@@ -274,15 +236,7 @@ export function createCache (options = {}) {
 // :::::: PROXY ::::::::::::::::::::::::::::::::::::::::::::::::::
 
 // cache.proxy['/app.css'] -> Promise<Response | null>  /  delete cache.proxy['/app.css']
-// kept off the cache object itself on purpose: a key named `keys` or `match` would
-// otherwise be shadowed by the method of the same name.
-function createProxy (cache) {
-  return new Proxy(Object.create(null), {
-    get            : (_, key)        => typeof key === 'symbol' ? undefined : cache.match(key),
-    set            : (_, key, value) => { cache.put(key, value); return true; },
-    deleteProperty : (_, key)        => { cache.delete(key); return true; },
-  });
-}
+const createProxy = (cache) => proxyOf({ delete: cache.delete, get: cache.match, set: cache.put });
 
 export const cache = createCache();
 

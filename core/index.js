@@ -5,6 +5,7 @@ export {
   DRIVER_METHODS,
   DRIVER_METHODS_SYNC,
   assertDriver,
+  asyncDriver,
   createMemoryDriver,
   isDriver,
   isSyncDriver,
@@ -12,3 +13,5 @@ export {
 } from './driver.js';
 
 export { NO_KEYSPACE, SEPARATOR, codecs, createKeyspace } from './keys.js';
+export { proxyOf }                                        from './proxy.js';
+export { createReport }                                   from './report.js';

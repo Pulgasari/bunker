@@ -2,9 +2,10 @@
 // @ts-self-types="./index.d.ts"
 
 import {
-  NO_KEYSPACE, 
-  createKeyspace, 
-  createMemoryDriver, 
+  NO_KEYSPACE,
+  createKeyspace,
+  createMemoryDriver,
+  createReport,
   withKeyspace,
 } from './../core/index.js';            // from '@bunker/core';
 import { createSingleFlight } from './../utils/singleFlight.js'; // from '@bunker/utils/singleFlight.js';
@@ -49,6 +50,7 @@ export function createPolicy (options = {}) {
     maxEntries = 0,
     namespace  = null,
     onError    = null,
+    onSuccess  = null,
     staleTtl   = 0,
     ttl        = null,
     version    = 1,
@@ -59,17 +61,12 @@ export function createPolicy (options = {}) {
   const memory   = new Map;         // l1. insertion order doubles as lru order.
   const once     = createSingleFlight();
   const now      = () => Date.now();
-  const fail     = (operation, key, error) => { onError?.({ error, key, operation }); };
+  const { attempt, fail } = createReport({ onError, onSuccess });
 
-  const writeThrough = async (key, entry) => {
-    try       { await store.set(key, entry); }
-    catch (e) { fail('set', key, e); }
-  };
-
-  const dropThrough = async (key) => {
-    try       { await store.delete(key); }
-    catch (e) { fail('delete', key, e); }
-  };
+  // l2 calls, a failing store is reported and read as empty
+  const writeThrough = (key, entry) => attempt('set',    key, null, () => store.set(key, entry));
+  const dropThrough  = (key)        => attempt('delete', key, null, () => store.delete(key));
+  const readThrough  = (key)        => attempt('get',    key, null, () => store.get(key));
 
   /*
     touch on read, so the lru order reflects use and not just insertion.
@@ -89,9 +86,7 @@ export function createPolicy (options = {}) {
     const cached = memory.get(key);
     if (cached) { remember(key, cached); return cached; }
 
-    let entry = null;
-    try       { entry = await store.get(key); }
-    catch (e) { fail('get', key, e); return null; }
+    const entry = await readThrough(key);
 
     // an l2 written by an older version of the code may not look like an entry
     if (!entry || typeof entry !== 'object' || !('value' in entry)) return null;
@@ -143,13 +138,12 @@ export function createPolicy (options = {}) {
   async function clear () {
     memory.clear();
     once.clear();
-    try { await store.clear(); }
-    catch (error) { fail('clear', null, error); }
+    await attempt('clear', null, null, () => store.clear());
   }
 
   async function keys (prefix = '') {
-    try       { return await store.keys(prefix); }
-    catch (e) { fail('keys', prefix, e); return [...memory.keys()].filter(key => key.startsWith(prefix)); }
+    const found = await attempt('keys', prefix, null, () => store.keys(prefix));
+    return found ?? [...memory.keys()].filter(key => key.startsWith(prefix));
   }
 
   /*
@@ -172,9 +166,8 @@ export function createPolicy (options = {}) {
     const survivors = [];
 
     for (const key of await keys(prefix)) {
-      let stored = null;
-      try       { stored = await store.get(key); }
-      catch (e) { fail('get', key, e); continue; }
+      const stored = await attempt('get', key, undefined, () => store.get(key));
+      if (stored === undefined) continue;   // unreadable, reported
 
       if (stateOf(stored, stamp) === DEAD) {
         memory.delete(key);

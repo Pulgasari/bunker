@@ -1,5 +1,11 @@
 // @bunker/utils/channel.js
-// cross-tab notification. 
+
+// cross-tab notification. BroadcastChannel where it exists (window, worker and
+// service worker alike), otherwise the localStorage `storage` event, which fires
+// in every *other* tab of the origin. neither delivers to the sender, so both
+// behave the same way from the caller's side.
+
+import { createEmitter } from './emitter.js';
 
 const FALLBACK_PREFIX     = '__bunker_sync__' + ':';
 const hasBroadcastChannel = () => typeof globalThis.BroadcastChannel === 'function';
@@ -10,9 +16,7 @@ const localStore = () => {
 };
 
 function createChannel (name) {
-  const listeners = new Set;
-  const emit      = message  => listeners.forEach(fn => fn(message));
-  const subscribe = listener => { listeners.add(listener); return () => listeners.delete(listener); };
+  const { clear, emit, subscribe } = createEmitter();
 
   if (hasBroadcastChannel()) {
     const channel = new BroadcastChannel(name);
@@ -20,14 +24,14 @@ function createChannel (name) {
 
     return {
       transport : 'broadcast-channel',
-      close     : () => { listeners.clear(); channel.close(); },
-      post      : channel.postMessage,
+      close     : () => { clear(); channel.close(); },
+      post      : message => channel.postMessage(message),   // unbound, postMessage throws
       subscribe,
     };
   }
 
   const store = localStore();
-  if (!store) return { transport: 'none', close: () => listeners.clear(), post: () => {}, subscribe };
+  if (!store) return { transport: 'none', close: clear, post: () => {}, subscribe };
 
   const key     = FALLBACK_PREFIX + name;
   const onEvent = (event) => {
@@ -40,8 +44,11 @@ function createChannel (name) {
 
   return {
     transport : 'storage-event',
-    close     : () => { listeners.clear(); globalThis.removeEventListener?.('storage', onEvent); },
+    close     : () => { clear(); globalThis.removeEventListener?.('storage', onEvent); },
     subscribe,
+
+    // the value has to change for the event to fire, hence the nonce. the entry is
+    // removed right after: it is a signal, not state, and must not occupy quota.
     post (message) {
       try {
         store.setItem(key, JSON.stringify({ message, nonce: Math.random() }));
