@@ -1,14 +1,16 @@
 {
-  "workspace": [
-    "./cache",
-    "./core",
-    "./db",
-    "./kit",
-    "./opfs",
-    "./policy",
-    "./storage",
-    "./utils"
-  ],
+  "imports": {
+    "@bunker/cache"   : "./cache/index.js",
+    "@bunker/core"    : "./core/index.js",
+    "@bunker/core/"   : "./core/",
+    "@bunker/db"      : "./db/index.js",
+    "@bunker/kit"     : "./kit/index.js",
+    "@bunker/opfs"    : "./opfs/index.js",
+    "@bunker/policy"  : "./policy/index.js",
+    "@bunker/storage" : "./storage/index.js",
+    "@bunker/utils"   : "./utils/index.js",
+    "@bunker/utils/"  : "./utils/"
+  },
   "compilerOptions": {
     "lib": ["deno.window", "dom", "dom.iterable", "dom.asynciterable"]
   },
@@ -16,7 +18,9 @@
     "check"       : "deno check */*.js",
     "lint"        : "deno lint",
     "fmt"         : "deno fmt",
-    "publish:dry" : "deno publish --dry-run"
+    "test"        : "sh test/run.sh",
+    "publish"     : "cd core && deno publish && cd ../utils && deno publish && cd ../storage && deno publish && cd ../db && deno publish && cd ../policy && deno publish && cd ../cache && deno publish && cd ../opfs && deno publish && cd ../kit && deno publish",
+    "publish:dry" : "cd core && deno publish --dry-run && cd ../utils && deno publish --dry-run && cd ../storage && deno publish --dry-run && cd ../db && deno publish --dry-run && cd ../policy && deno publish --dry-run && cd ../cache && deno publish --dry-run && cd ../opfs && deno publish --dry-run && cd ../kit && deno publish --dry-run"
   },
   "fmt": {
     "useTabs": false,

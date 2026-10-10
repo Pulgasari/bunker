@@ -4,16 +4,6 @@
   "description": "Browser storage, split along the lines the platform actually draws.",
   "type": "module",
   "private": true,
-  "workspaces": [
-    "cache",
-    "core",
-    "db",
-    "kit",
-    "opfs",
-    "policy",
-    "storage",
-    "utils"
-  ],
   "license": "MIT",
   "repository": {
     "type": "git",

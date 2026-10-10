@@ -10,12 +10,12 @@
     ".": "./index.js"
   },
   "dependencies": {
-    "@bunker/cache"   : "workspace:*",
-    "@bunker/core"    : "workspace:*",
-    "@bunker/db"      : "workspace:*",
-    "@bunker/policy"  : "workspace:*",
-    "@bunker/storage" : "workspace:*",
-    "@bunker/utils"   : "workspace:*"
+    "@bunker/cache"   : "^0.1.0",
+    "@bunker/core"    : "^0.1.0",
+    "@bunker/db"      : "^0.2.0",
+    "@bunker/policy"  : "^0.1.0",
+    "@bunker/storage" : "^0.1.0",
+    "@bunker/utils"   : "^0.1.0"
   },
   "files": [
     "index.js",
