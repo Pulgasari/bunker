@@ -10,10 +10,12 @@
     ".": "./index.js"
   },
   "dependencies": {
-    "@bunker/core": "workspace:*"
+    "@bunker/core": "workspace:*",
+    "@bunker/utils": "workspace:*"
   },
   "files": [
     "index.js",
+    "idb.js",
     "index.d.ts",
     "readme.md"
   ],

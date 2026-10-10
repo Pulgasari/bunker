@@ -7,8 +7,8 @@ import {
   createMemoryDriver,
   createReport,
   withKeyspace,
-} from './../core/index.js';            // from '@bunker/core';
-import { createSingleFlight } from './../utils/singleFlight.js'; // from '@bunker/utils/singleFlight.js';
+} from '@bunker/core';
+import { createSingleFlight } from '@bunker/utils/singleFlight.js';
 
 // :::::: ENTRIES ::::::::::::::::::::::::::::::::::::::::::::::::
 

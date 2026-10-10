@@ -18,7 +18,7 @@ anything not listed here is read as a key,
 so a method left out would silently turn into a lookup.
 */
 
-import { createEmitter }              from './../utils/emitter.js'; // from '@bunker/utils/emitter.js';
+import { createEmitter }              from '@bunker/utils/emitter.js';
 import { requestOf, transactionOf }   from './idb.js';
 
 // :::::: CONSTANTS

@@ -16,8 +16,8 @@
   read what you need before overwriting.
 */
 
-import { createReport } from './../core/index.js'; // from '@bunker/core';
-import { once }         from './../utils/once.js'; // from '@bunker/utils/once.js';
+import { createReport } from '@bunker/core';
+import { once }         from '@bunker/utils/once.js';
 
 const BINARY  = '$bunker:binary';
 const MAGIC   = new Uint8Array([0x42, 0x55, 0x4e, 0x4b, 0x45, 0x52, 0x00, 0x01]);   // "BUNKER" 0 1

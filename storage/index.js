@@ -1,8 +1,8 @@
 // @bunker/storage
 // @ts-self-types="./index.d.ts"
 
-import { NO_KEYSPACE, asyncDriver, codecs, createKeyspace, createReport, proxyOf } from './../core/index.js';     // from '@bunker/core';
-import { createEmitter }                                                              from './../utils/emitter.js'; // from '@bunker/utils/emitter.js';
+import { NO_KEYSPACE, asyncDriver, codecs, createKeyspace, createReport, proxyOf } from '@bunker/core';
+import { createEmitter }                                                              from '@bunker/utils/emitter.js';
 
 const PROBE = '__bunker_probe__';
 

@@ -5,12 +5,23 @@
   "exports": {
     "."              : "./index.js",
     "./channel"      : "./channel.js",
+    "./channel.js"   : "./channel.js",
+    "./emitter"      : "./emitter.js",
+    "./emitter.js"   : "./emitter.js",
     "./hash"         : "./hash.js",
+    "./hash.js"      : "./hash.js",
     "./lazy"         : "./lazy.js",
+    "./lazy.js"      : "./lazy.js",
     "./lru"          : "./lru.js",
+    "./lru.js"       : "./lru.js",
     "./memoize"      : "./memoize.js",
+    "./memoize.js"   : "./memoize.js",
+    "./once"         : "./once.js",
+    "./once.js"      : "./once.js",
     "./quota"        : "./quota.js",
-    "./singleFlight" : "./singleFlight.js"
+    "./quota.js"     : "./quota.js",
+    "./singleFlight" : "./singleFlight.js",
+    "./singleFlight.js" : "./singleFlight.js"
   },
   "publish": {
     "include": [
