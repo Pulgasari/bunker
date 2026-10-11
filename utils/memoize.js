@@ -23,7 +23,7 @@ export const memoize = (callback, { key = (...args) => args[0], max = 0 } = {}) 
   };
 
   memoized.cache = store;
-  memoized.clear = () => store.clear();
+  memoized.clear = store.clear;
   return memoized;
 };
 
