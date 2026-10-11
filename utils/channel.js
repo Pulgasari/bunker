@@ -19,13 +19,13 @@ function createChannel (name) {
   const { clear, emit, subscribe } = createEmitter();
 
   if (hasBroadcastChannel()) {
-    const channel = new BroadcastChannel(name);
-    channel.onmessage = event => emit(event.data);
+    const channel = new BroadcastChannel (name);
+    channel.onmessage = event => emit (event.data);
 
     return {
       transport : 'broadcast-channel',
       close     : () => { clear(); channel.close(); },
-      post      : message => channel.postMessage(message),   // unbound, postMessage throws
+      post      : channel.postMessage,   // unbound, postMessage throws
       subscribe,
     };
   }
@@ -37,7 +37,7 @@ function createChannel (name) {
   const onEvent = (event) => {
     if (event.key !== key || event.newValue == null) return;
     try   { emit(JSON.parse(event.newValue).message); }
-    catch { /* a foreign writer on the same key, nothing to deliver */ }
+    catch {} /* a foreign writer on the same key, nothing to deliver */
   };
 
   globalThis.addEventListener?.('storage', onEvent);
