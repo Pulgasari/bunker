@@ -1,7 +1,8 @@
 // @bunker/utils/singleFlight.js
 
-// one pending promise per key. two concurrent misses must not both hit the network,
-// which is exactly what the old AufbauCache did.
+// one pending promise per key. two concurrent misses must not both
+// hit the network, which is exactly what the old AufbauCache did.
+
 export function createSingleFlight () {
   const inflight = new Map;
 
@@ -13,12 +14,13 @@ export function createSingleFlight () {
     inflight.set(key, promise);
     return promise;
   };
-
-  run.has    = (key) => inflight.has(key);
-  run.size   = ()    => inflight.size;
-  run.abort  = (key) => inflight.delete(key);
-  run.clear  = ()    => inflight.clear();
-
+  
+  run.abort  = inflight.delete;
+  run.clear  = inflight.clear;
+  run.has    = inflight.has;
+  run.size   = () => inflight.size;
+  
+  
   return run;
 }
 
