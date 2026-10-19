@@ -2,15 +2,9 @@
 
 import { NO_KEYSPACE } from './keys.js';
 
-// every driver implements this async surface. it is the whole contract:
-// storage policy (ttl, eviction, revalidation) lives in @bunker/policy, never here,
-// so a driver only ever moves opaque values in and out.
-export const DRIVER_METHODS = ['clear', 'delete', 'get', 'keys', 'set'];
-
-// drivers backed by a synchronous api additionally expose getSync/setSync/deleteSync
-// and set `sync: true`. only @bunker/storage can, and the anti-flicker boot path
-// depends on it: nothing asynchronous can land before the first paint.
-export const DRIVER_METHODS_SYNC = ['deleteSync', 'getSync', 'setSync'];
+export const 
+DRIVER_METHODS      = ['clear', 'delete', 'get', 'keys', 'set'],
+DRIVER_METHODS_SYNC = ['deleteSync', 'getSync', 'setSync'];
 
 export function isDriver (value) {
   return Boolean(value) && DRIVER_METHODS.every(method => typeof value[method] === 'function');
