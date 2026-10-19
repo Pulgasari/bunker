@@ -13,5 +13,5 @@ export {
 } from './driver.js';
 
 export { NO_KEYSPACE, SEPARATOR, codecs, createKeyspace } from './keys.js';
-export { proxyOf }                                        from './proxy.js';
-export { createReport }                                   from './report.js';
+export { proxyOf }      from './proxy.js';
+export { createReport } from './report.js';
