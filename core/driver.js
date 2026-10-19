@@ -2,6 +2,82 @@
 
 import { NO_KEYSPACE } from './keys.js';
 
+/*
+export const 
+DRIVER_METHODS      = ['clear', 'delete', 'get', 'keys', 'set'],
+DRIVER_METHODS_SYNC = ['deleteSync', 'getSync', 'setSync'];
+
+const
+isEmpty = (arr)    => arr.length === 0,
+isFn    = (sth)    => typeof sth === 'function',
+pipe    = (...fns) => (value) => fns.reduce((acc, fn) => fn(acc), value),
+curry   = (fn)     => function curried(...args) {
+  if (args.length >= fn.length) return fn.apply(this, args);
+  return (...nextArgs) => curried.apply(this, args.concat(nextArgs));
+};
+
+
+// Pure curried method inspection logic
+export const 
+findMissingInMethods = curry((methods, val) => methods.filter((method) => !isFn(val?.[method])) ),
+getMissingMethods    = (...lists) => findMissingInMethods(lists.flat()),
+hasMethods           = (...lists) => pipe( getMissingMethods(...lists), isEmpty );
+
+const assertNoMissing = curry((label, val, missing) => {
+  if (!isEmpty(missing)) throw new TypeError(`[bunker] ${label} is missing:${missing.join(', ')}`);
+  return val;
+});
+
+export const assertMethods = (...lists) => {
+  const getMissing = getMissingMethods(...lists);
+  return (val, label = 'driver') =>
+    pipe(
+      getMissing,
+      assertNoMissing(label, val)
+    )(val);
+};
+
+export const 
+isDriver         = hasMethods(DRIVER_METHODS),
+isSyncDriver     = hasMethods(DRIVER_METHODS, DRIVER_METHODS_SYNC);
+assertDriver     = assertMethods(DRIVER_METHODS),
+assertSyncDriver = assertMethods(DRIVER_METHODS, DRIVER_METHODS_SYNC);
+*/
+
+/*
+// Step 2: Core inspector – returns missing method names
+export const getMissingMethods = (...lists) => {
+  const methods = lists.flat();
+  return (val) => methods.filter((m) => !isFn(val?.[m]));
+};
+
+// Step 3: Boolean predicate builder – derived from Step 2
+export const hasMethods = (...lists) => {
+  const getMissing = getMissingMethods(...lists);
+  return (val) => getMissing(val).length === 0;
+};
+
+// Step 4: Assertion function builder – derived from Step 2
+export const assertMethods = (...lists) => {
+  const getMissing = getMissingMethods(...lists);
+  return (value, label = 'driver') => {
+    const missing = getMissing(value);
+    if (missing.length === 0) return value;
+    throw new TypeError(`[bunker] ${label} is missing:${missing.join(', ')}`);
+  };
+};
+
+// Step 5: High-level exports created via partial application / composition
+export const 
+isDriver         = hasMethods(DRIVER_METHODS),
+isSyncDriver     = hasMethods(DRIVER_METHODS, DRIVER_METHODS_SYNC);
+assertDriver     = assertMethods(DRIVER_METHODS),
+assertSyncDriver = assertMethods(DRIVER_METHODS, DRIVER_METHODS_SYNC);
+*/
+
+
+
+
 export const 
 DRIVER_METHODS      = ['clear', 'delete', 'get', 'keys', 'set'],
 DRIVER_METHODS_SYNC = ['deleteSync', 'getSync', 'setSync'];
