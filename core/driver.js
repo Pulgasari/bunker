@@ -6,6 +6,9 @@ export const
 DRIVER_METHODS      = ['clear', 'delete', 'get', 'keys', 'set'],
 DRIVER_METHODS_SYNC = ['deleteSync', 'getSync', 'setSync'];
 
+
+
+
 export function isDriver (value) {
   return Boolean(value) && DRIVER_METHODS.every(method => typeof value[method] === 'function');
 }
@@ -16,9 +19,25 @@ export function isSyncDriver (value) {
 
 export function assertDriver (value, label = 'driver') {
   if (isDriver(value)) return value;
-  const missing = DRIVER_METHODS.filter(method => typeof value?.[method] !== 'function');
+  const missing = DRIVER_METHODS.filter(method => !isFn(value?.[method]));
   throw new TypeError(`[bunker] ${label} is missing: ${missing.join(', ')}`);
 }
+
+
+
+const hasMethods = (sth, methods) => methods.every(m => isFn(sth?.[m]));
+
+export const 
+isDriver     = val =>                  hasMethods(val, DRIVER_METHODS),
+isSyncDriver = val => isDriver(val) && hasMethods(val, DRIVER_METHODS_SYNC);
+
+
+const isFn = (sth) => typeof sth === 'function';
+const hasMethods = (...lists) => val => lists.flat().every(m => isFn(val?.[m]));
+
+export const 
+isDriver     = hasMethods(DRIVER_METHODS),
+isSyncDriver = hasMethods(DRIVER_METHODS, DRIVER_METHODS_SYNC);
 
 // the async contract over a synchronous surface (clearSync, deleteSync, getSync,
 // keysSync, setSync), for the drivers that are synchronous underneath
