@@ -12,18 +12,12 @@ import { createSingleFlight } from './../utils/singleFlight.js'; // from '@bunke
 
 // :::::: ENTRIES ::::::::::::::::::::::::::::::::::::::::::::::::
 
-/*
-  an entry is fresh until `expire`, then servable-but-stale until `staleUntil`,
-  then dead. a null `expire` means it never ages at all.
-
-  the two windows are separate on purpose: ttl is how long the value is trusted,
-  staleTtl is how long it may still be handed out while a fresh one is fetched.
-*/
-const 
-FRESH = 'fresh', 
-STALE = 'stale', 
+const
 DEAD  = 'dead',
-MISS  = 'miss';
+FRESH = 'fresh',
+MISS  = 'miss',
+STALE = 'stale';
+
 
 function createEntry (value, ttl, staleTtl, now) {
   const expire = ttl ? now + ttl : null;
@@ -64,18 +58,11 @@ export function createPolicy (options = {}) {
   const { attempt, fail } = createReport({ onError, onSuccess });
 
   // l2 calls, a failing store is reported and read as empty
-  const writeThrough = (key, entry) => attempt('set',    key, null, () => store.set(key, entry));
-  const dropThrough  = (key)        => attempt('delete', key, null, () => store.delete(key));
-  const readThrough  = (key)        => attempt('get',    key, null, () => store.get(key));
+  const 
+  writeThrough = (key, entry) => attempt('set',    key, null, () => store.set    (key, entry)),
+   dropThrough = (key)        => attempt('delete', key, null, () => store.delete (key)),
+   readThrough = (key)        => attempt('get',    key, null, () => store.get    (key));
 
-  /*
-    touch on read, so the lru order reflects use and not just insertion.
-
-    `max` bounds l1 only, and evicting from l1 deliberately leaves l2 alone: l1 is
-    also filled by reads, so writing the eviction through would delete entries from
-    the persistent layer merely because they scrolled out of the memory window.
-    the l2 ceiling is `maxEntries` and lives in prune().
-  */
   function remember (key, entry) {
     memory.delete(key);
     memory.set(key, entry);
@@ -146,15 +133,6 @@ export function createPolicy (options = {}) {
     return found ?? [...memory.keys()].filter(key => key.startsWith(prefix));
   }
 
-  /*
-    entries only expire lazily on read, so a key nobody reads again is never
-    reclaimed. prune sweeps actively, and is also where the l2 ceiling is enforced:
-    it already walks every key, so capping costs nothing extra here, whereas doing
-    it per write would mean a full scan on every set().
-
-    counts both layers, and reports what it removed even when there is no l2 —
-    the old implementation returned 0 in that case despite having emptied l1.
-  */
   async function prune (prefix = '') {
     const stamp   = now();
     const removed = new Set; // a key living in both layers must count once, not twice
@@ -192,18 +170,7 @@ export function createPolicy (options = {}) {
   }
 
   // :::::: stale-while-revalidate
-
-  /*
-    the primitive everything else here exists for.
-
-    fresh  -> the cached value
-    stale  -> the cached value immediately, and a revalidation in the background
-    miss   -> awaits the fetcher
-
-    onRevalidate fires only when the background fetch produced something different.
-    that is what lets a caller show the old value now and decide for itself whether
-    a late swap is worth the reflow.
-  */
+  
   async function swr (key, fetcher, overrides = {}) {
     const found = await entry(key);
 
